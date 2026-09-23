@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, Hash, MessageSquare, MoreHorizontal, Pencil, Plus, Search, Trash2, UserPlus, Users } from "lucide-react";
+import { BookOpen, Bot, Hash, MessageSquare, MoreHorizontal, Pencil, Plus, Search, Trash2, UserPlus, Users } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -24,95 +24,25 @@ export const chatKeys = {
   threads: ["chat", "threads"] as const,
 };
 
-/** Team chat: Everyone, groups and direct messages, plus the title comment threads you're part of. */
+/** Ask Abrams full page: conversations on the left, the open conversation on the right. */
 export function ChatView() {
   const params = useSearchParams();
   const router = useRouter();
   const roomId = params.get("room") ?? EVERYONE;
   const me = useMe().data?.user;
   const users = useUsers();
-  const [q, setQ] = useState("");
-  const rooms = useQuery({
-    queryKey: chatKeys.rooms,
-    queryFn: () => api<{ rooms: RoomView[] }>("/api/chat/rooms"),
-    refetchInterval: 8_000,
-    refetchIntervalInBackground: false,
-  });
-  const threads = useQuery({ queryKey: chatKeys.threads, queryFn: () => api<{ threads: TitleThreadView[] }>("/api/chat/threads"), staleTime: 30_000 });
-
+  const rooms = useRooms();
   const open = (id: string) => router.replace(`/chat?room=${encodeURIComponent(id)}`, { scroll: false });
-  const all = rooms.data?.rooms ?? [];
-  const match = (s: string) => s.toLowerCase().includes(q.trim().toLowerCase());
-  const list = all.filter((r) => !q.trim() || match(r.title));
-  const groups = list.filter((r) => r.type === "group");
-  const direct = list.filter((r) => r.type === "direct");
-  const everyone = list.find((r) => r.type === "everyone");
-  const current = all.find((r) => r._id === roomId);
-  const people = (users.data?.users ?? []).filter((p) => p.email !== me?.email);
+  const current = rooms.data?.rooms.find((r) => r._id === roomId);
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
       <aside className="flex w-[300px] shrink-0 flex-col border-r border-line bg-surface">
-        <div className="flex items-center justify-between gap-2 px-4 pb-2 pt-4">
-          <h1 className="text-lg font-semibold">Messages</h1>
-          <div className="flex gap-1">
-            <NewDirect people={people} onOpened={open} />
-            <NewGroup people={people} onCreated={open} />
-          </div>
+        <div className="flex items-center gap-2 px-4 pb-1 pt-4">
+          <AskAbramsMark />
+          <h1 className="text-lg font-semibold">Ask Abrams</h1>
         </div>
-        <div className="px-3 pb-2">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-subtle" />
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a conversation" className="pl-8" />
-          </div>
-        </div>
-        <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto pb-3">
-          {rooms.isPending ? (
-            <div className="space-y-2 p-3">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-12" />
-              ))}
-            </div>
-          ) : (
-            <>
-              {everyone ? <RoomItem room={everyone} me={me?.email} active={roomId === everyone._id} onClick={() => open(everyone._id)} /> : null}
-              <Section title="Groups" empty="Create a group with the + button.">
-                {groups.map((r) => (
-                  <RoomItem key={r._id} room={r} me={me?.email} active={roomId === r._id} onClick={() => open(r._id)} />
-                ))}
-              </Section>
-              <Section title="Direct messages" empty="Start one with the message button.">
-                {direct.map((r) => (
-                  <RoomItem key={r._id} room={r} me={me?.email} active={roomId === r._id} onClick={() => open(r._id)} />
-                ))}
-              </Section>
-              <Section title="Title conversations" empty="Comments you write or are mentioned in on titles appear here.">
-                {(threads.data?.threads ?? [])
-                  .filter((t) => !q.trim() || match(`${t.titleName} ${t.rowLabel}`))
-                  .map((t) => (
-                    <Link
-                      key={t.threadKey}
-                      href={`/titles/${t.isbn}?thread=${encodeURIComponent(t.threadKey)}`}
-                      className="mx-2 flex gap-2.5 rounded-lg px-2 py-2 hover:bg-surface-2"
-                    >
-                      <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-info-soft text-info">
-                        <BookOpen className="size-4" />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-baseline gap-2">
-                          <span className="truncate text-[13px] font-medium text-ink">{t.titleName}</span>
-                          <span className="ml-auto shrink-0 text-[11px] text-subtle">{timeAgo(t.lastAt)}</span>
-                        </span>
-                        <span className="block truncate text-xs text-muted">
-                          {t.rowLabel} · {t.lastAuthor.split(" ")[0]}: {t.excerpt}
-                        </span>
-                      </span>
-                    </Link>
-                  ))}
-              </Section>
-            </>
-          )}
-        </div>
+        <ConversationList activeId={roomId} onOpen={open} />
       </aside>
 
       <section className="flex min-w-0 flex-1 flex-col bg-canvas">
@@ -130,6 +60,114 @@ export function ChatView() {
         )}
       </section>
     </div>
+  );
+}
+
+/** Round Ask Abrams mark: a friendly robot on Abrams red. */
+export function AskAbramsMark({ className }: { className?: string }) {
+  return (
+    <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-full bg-brand text-white shadow-sm", className)}>
+      <Bot className="size-4" />
+    </span>
+  );
+}
+
+export function useRooms() {
+  return useQuery({
+    queryKey: chatKeys.rooms,
+    queryFn: () => api<{ rooms: RoomView[] }>("/api/chat/rooms"),
+    refetchInterval: 8_000,
+    refetchIntervalInBackground: false,
+  });
+}
+
+/**
+ * Searchable conversation list (Everyone, groups, direct messages, title conversations), with
+ * buttons to start a direct message or a group. `top` renders pinned items above (the assistant).
+ */
+export function ConversationList({
+  activeId,
+  onOpen,
+  top,
+  compact,
+}: {
+  activeId: string | null;
+  onOpen: (roomId: string) => void;
+  top?: React.ReactNode;
+  compact?: boolean;
+}) {
+  const me = useMe().data?.user;
+  const users = useUsers();
+  const rooms = useRooms();
+  const threads = useQuery({ queryKey: chatKeys.threads, queryFn: () => api<{ threads: TitleThreadView[] }>("/api/chat/threads"), staleTime: 30_000 });
+  const [q, setQ] = useState("");
+  const all = rooms.data?.rooms ?? [];
+  const match = (text: string) => text.toLowerCase().includes(q.trim().toLowerCase());
+  const list = all.filter((r) => !q.trim() || match(r.title));
+  const groups = list.filter((r) => r.type === "group");
+  const direct = list.filter((r) => r.type === "direct");
+  const everyone = list.find((r) => r.type === "everyone");
+  const people = (users.data?.users ?? []).filter((p) => p.email !== me?.email);
+
+  return (
+    <>
+      <div className={cn("flex items-center gap-1 pb-2", compact ? "px-3 pt-2" : "px-3")}>
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-subtle" />
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a conversation" className="pl-8" />
+        </div>
+        <NewDirect people={people} onOpened={onOpen} />
+        <NewGroup people={people} onCreated={onOpen} />
+      </div>
+      <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto pb-3">
+        {top}
+        {rooms.isPending ? (
+          <div className="space-y-2 p-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-12" />
+            ))}
+          </div>
+        ) : (
+          <>
+            {everyone ? <RoomItem room={everyone} me={me?.email} active={activeId === everyone._id} onClick={() => onOpen(everyone._id)} /> : null}
+            <Section title="Groups" empty="Create a group with the + button.">
+              {groups.map((r) => (
+                <RoomItem key={r._id} room={r} me={me?.email} active={activeId === r._id} onClick={() => onOpen(r._id)} />
+              ))}
+            </Section>
+            <Section title="Direct messages" empty="Start one with the message button.">
+              {direct.map((r) => (
+                <RoomItem key={r._id} room={r} me={me?.email} active={activeId === r._id} onClick={() => onOpen(r._id)} />
+              ))}
+            </Section>
+            <Section title="Title conversations" empty="Comments you write or are mentioned in on titles appear here.">
+              {(threads.data?.threads ?? [])
+                .filter((t) => !q.trim() || match(`${t.titleName} ${t.rowLabel}`))
+                .map((t) => (
+                  <Link
+                    key={t.threadKey}
+                    href={`/titles/${t.isbn}?thread=${encodeURIComponent(t.threadKey)}`}
+                    className="mx-2 flex gap-2.5 rounded-lg px-2 py-2 hover:bg-surface-2"
+                  >
+                    <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-info-soft text-info">
+                      <BookOpen className="size-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-baseline gap-2">
+                        <span className="truncate text-[13px] font-medium text-ink">{t.titleName}</span>
+                        <span className="ml-auto shrink-0 text-[11px] text-subtle">{timeAgo(t.lastAt)}</span>
+                      </span>
+                      <span className="block truncate text-xs text-muted">
+                        {t.rowLabel} · {t.lastAuthor.split(" ")[0]}: {t.excerpt}
+                      </span>
+                    </span>
+                  </Link>
+                ))}
+            </Section>
+          </>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -198,7 +236,22 @@ function mergeMessages(prev: MessageView[], incoming: MessageView[]): MessageVie
   return [...byId.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
-function Room({ room, me, people }: { room: RoomView; me: { email: string; role: string } | null; people: Person[] }) {
+/** One conversation. `compact` is the docked-window version; `actions` go in its header. */
+export function Room({
+  room,
+  me,
+  people,
+  compact,
+  actions,
+  initialText,
+}: {
+  room: RoomView;
+  me: { email: string; role: string } | null;
+  people: Person[];
+  compact?: boolean;
+  actions?: React.ReactNode;
+  initialText?: string;
+}) {
   const qc = useQueryClient();
   const [messages, setMessages] = useState<MessageView[] | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -339,15 +392,15 @@ function Room({ room, me, people }: { room: RoomView; me: { email: string; role:
 
   return (
     <>
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line bg-surface px-5">
-        <RoomIcon room={room} me={me?.email} size="size-8" />
+      <header className={cn("flex shrink-0 items-center gap-3 border-b border-line bg-surface", compact ? "h-12 px-3" : "h-14 px-5")}>
+        <RoomIcon room={room} me={me?.email} size={compact ? "size-7" : "size-8"} />
         <div className="min-w-0 flex-1">
           <div className="truncate text-[15px] font-semibold">{room.title}</div>
           <div className="truncate text-xs text-muted">
             {room.type === "everyone" ? "The whole team" : room.type === "direct" ? "Direct message" : `${room.members.length} members`}
           </div>
         </div>
-        <div className="hidden -space-x-1.5 md:flex">
+        <div className={cn("hidden -space-x-1.5", !compact && "md:flex")}>
           {members.slice(0, 6).map((e) => (
             <Tooltip key={e} content={names.get(e) ?? e}>
               <span className="flex size-7 items-center justify-center rounded-full text-[10px] font-semibold text-white ring-2 ring-surface" style={{ background: personColor(e) }}>
@@ -358,6 +411,7 @@ function Room({ room, me, people }: { room: RoomView; me: { email: string; role:
           {members.length > 6 ? <span className="num ml-2 self-center text-xs text-muted">+{members.length - 6}</span> : null}
         </div>
         {room.type === "group" ? <GroupMenu room={room} people={people} /> : null}
+        {actions}
       </header>
 
       <div
@@ -366,7 +420,7 @@ function Room({ room, me, people }: { room: RoomView; me: { email: string; role:
           const el = e.currentTarget;
           stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
         }}
-        className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-5 py-4"
+        className={cn("scrollbar-thin min-h-0 flex-1 overflow-y-auto", compact ? "px-2 py-2" : "px-5 py-4")}
       >
         {messages === null ? (
           <div className="space-y-3">
@@ -490,8 +544,11 @@ function Room({ room, me, people }: { room: RoomView; me: { email: string; role:
         )}
       </div>
 
-      <div className="shrink-0 border-t border-line bg-surface px-5 py-3">
+      <div className={cn("shrink-0 border-t border-line bg-surface", compact ? "px-3 py-2" : "px-5 py-3")}>
         <MentionComposer
+          key={initialText ?? ""}
+          initialText={initialText}
+          autoFocus={!!initialText}
           people={people.filter((p) => p.email !== me?.email && members.includes(p.email))}
           placeholder={`Message ${room.type === "direct" ? room.title : room.title === "Everyone" ? "everyone" : room.title}`}
           onSend={send}

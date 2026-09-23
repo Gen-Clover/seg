@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ExternalLink, Home, LayoutDashboard, LogOut, MessagesSquare, PanelLeft, Search, SquarePen } from "lucide-react";
+import { Bot, ExternalLink, Home, LayoutDashboard, LogOut, PanelLeft, Search, SquarePen } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { Session } from "@/server/auth/session";
@@ -12,6 +12,7 @@ import { useWorklist } from "@/lib/worklist";
 import { BrandMark, BrandName } from "../brand";
 import { Badge, Kbd } from "../ui/misc";
 import { Tooltip } from "../ui/overlay";
+import { AskAbramsDock } from "@/features/ask-abrams/dock";
 import { CommandPaletteProvider, useCommandPalette } from "./command-palette";
 import { NotificationsBell } from "./notifications";
 import { ThemeToggle } from "./theme-toggle";
@@ -31,6 +32,7 @@ export function AppShell({
         <Sidebar user={user} mainMenuUrl={mainMenuUrl} />
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden">{children}</main>
       </div>
+      <AskAbramsDock />
     </CommandPaletteProvider>
   );
 }
@@ -62,7 +64,7 @@ function Sidebar({ user, mainMenuUrl }: { user: Session; mainMenuUrl: string | n
       icon: SquarePen,
       active: pathname.startsWith("/titles"),
     },
-    { href: "/chat", label: "Messages", icon: MessagesSquare, active: pathname === "/chat", badge: chatUnread.data?.unread ?? 0 },
+    { href: "/chat", label: "Ask Abrams", icon: Bot, active: pathname === "/chat", badge: chatUnread.data?.unread ?? 0 },
   ];
 
   const signOut = async () => {

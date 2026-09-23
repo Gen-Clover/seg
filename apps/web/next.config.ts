@@ -10,7 +10,7 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["mongodb", "@google-cloud/bigquery"],
   turbopack: { root: repoRoot },
   poweredByHeader: false,
-  devIndicators: { position: "bottom-right" },
+  devIndicators: { position: "bottom-left" }, // keeps the bottom-right free for Ask Abrams
 };
 
 export default nextConfig;

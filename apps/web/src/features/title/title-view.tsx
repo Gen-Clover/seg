@@ -17,6 +17,7 @@ import {
   Keyboard,
   MessageSquare,
   Redo2,
+  Share2,
   Search,
   Undo2,
   X,
@@ -47,6 +48,7 @@ import { queryKeys, useComments, useMe, usePrefetchTitle, useSummary, useTitle, 
 import type { Viewer } from "@/server/services/live";
 import { cn, fmtDate, fmtInt, fmtMoney, fmtSigned, timeAgo } from "@/lib/utils";
 import { useWorklist } from "@/lib/worklist";
+import { shareInAskAbrams } from "../ask-abrams/dock";
 import { AddAccountDialog } from "./add-account-dialog";
 import { CompPanel } from "./comp-panel";
 import { EstimatesGrid, type EstimatesGridHandle } from "./estimates-grid";
@@ -306,6 +308,7 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
         status={autosave.status}
         lastSavedAt={autosave.lastSavedAt}
         canEdit={canEdit}
+        titleName={data?.title.title ?? null}
         viewers={live.viewers}
         commentCount={comments.data?.comments.length ?? 0}
         onPanel={(tab) => setPanel({ open: true, tab, thread: null })}
@@ -485,6 +488,7 @@ function TopBar({
   status,
   lastSavedAt,
   canEdit,
+  titleName,
   viewers,
   commentCount,
   onPanel,
@@ -493,6 +497,7 @@ function TopBar({
   status: SaveStatus;
   lastSavedAt: number | null;
   canEdit: boolean;
+  titleName: string | null;
   viewers: Viewer[];
   commentCount: number;
   onPanel: (tab: PanelTab) => void;
@@ -581,6 +586,14 @@ function TopBar({
           <History />
           History
         </Button>
+        {titleName ? (
+          <Tooltip content="Share this title in Ask Abrams">
+            <Button variant="ghost" size="sm" onClick={() => shareInAskAbrams(isbn, titleName)}>
+              <Share2 />
+              Share
+            </Button>
+          </Tooltip>
+        ) : null}
         <span className="mx-1 h-5 w-px bg-line" />
         {canEdit ? <SaveIndicator status={status} lastSavedAt={lastSavedAt} /> : <ReadOnlyBadge />}
       </div>

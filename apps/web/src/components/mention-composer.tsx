@@ -22,6 +22,7 @@ export function MentionComposer({
   sendLabel = "Send",
   rows = 3,
   autoFocus,
+  initialText = "",
 }: {
   people: Person[];
   placeholder: string;
@@ -30,9 +31,11 @@ export function MentionComposer({
   sendLabel?: string;
   rows?: number;
   autoFocus?: boolean;
+  /** Pre-filled text, e.g. a title shared into a conversation. */
+  initialText?: string;
 }) {
   const input = useRef<HTMLTextAreaElement>(null);
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText);
   const [picked, setPicked] = useState<Map<string, string>>(new Map());
   const [query, setQuery] = useState<string | null>(null);
   const [highlight, setHighlight] = useState(0);

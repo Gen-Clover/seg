@@ -3,56 +3,61 @@
 /* Dark mode follows the `.dark` class on <html> (set before paint from the saved preference). */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * Abrams palette (abramsbooks.com): Abrams red, white, warm greys and the warm beige used for
+ * panels. Teal (Abrams' link colour) is used for selection and links so red stays for errors.
+ * Text colours meet WCAG AA contrast on their surfaces.
+ */
 :root {
-  --canvas: #f6f7f9;
+  --canvas: #f7f5f2;
   --surface: #ffffff;
-  --surface-2: #f2f4f7;
-  --surface-3: #e9ecf1;
-  --line: #e4e7ec;
-  --line-strong: #cfd4dc;
-  --ink: #0f1728;
-  --ink-2: #344054;
-  --muted: #667085;
-  --subtle: #98a2b3;
-  --brand: #d4202a;
+  --surface-2: #f4f0ec;
+  --surface-3: #ebe6e2;
+  --line: #e2dbd4;
+  --line-strong: #cbc1b7;
+  --ink: #1c1916;
+  --ink-2: #3b352f;
+  --muted: #6a635c;
+  --subtle: #857d75;
+  --brand: #e91a23;
   --brand-ink: #ffffff;
-  --brand-soft: #fdeceb;
-  --brand-line: #f7c7c4;
-  --ok: #12a150;
-  --ok-soft: #e7f7ee;
-  --warn: #c97a0a;
-  --warn-soft: #fdf3e2;
-  --info: #2e6be6;
-  --info-soft: #e9f0fd;
-  --danger: #d4202a;
-  --ring: #d4202a;
-  --shadow-color: 220 30% 15%;
+  --brand-soft: #fdebec;
+  --brand-line: #f5c2c4;
+  --ok: #1d7f47;
+  --ok-soft: #e4f3ea;
+  --warn: #a95a06;
+  --warn-soft: #fbefe0;
+  --info: #0a7ca2;
+  --info-soft: #e3f2f7;
+  --danger: #cf1219;
+  --ring: #0a7ca2;
+  --shadow-color: 25 25% 12%;
   color-scheme: light;
 }
 
 .dark {
-  --canvas: #0b0d12;
-  --surface: #12151c;
-  --surface-2: #181c25;
-  --surface-3: #212633;
-  --line: #242a36;
-  --line-strong: #323a4a;
-  --ink: #eceef2;
-  --ink-2: #c7ccd6;
-  --muted: #98a1b3;
-  --subtle: #6b7486;
-  --brand: #f0454d;
+  --canvas: #12100e;
+  --surface: #1b1815;
+  --surface-2: #231f1b;
+  --surface-3: #2d2823;
+  --line: #36302a;
+  --line-strong: #4d453d;
+  --ink: #f4f0eb;
+  --ink-2: #dbd4cb;
+  --muted: #aba298;
+  --subtle: #8f877e;
+  --brand: #ff4b53;
   --brand-ink: #ffffff;
-  --brand-soft: #2a1618;
-  --brand-line: #5a2226;
-  --ok: #3ccb7f;
-  --ok-soft: #132a1f;
-  --warn: #f0b04a;
-  --warn-soft: #2d2413;
-  --info: #6c9cff;
-  --info-soft: #141f36;
-  --danger: #f0454d;
-  --ring: #f0454d;
+  --brand-soft: #2e1618;
+  --brand-line: #5e2327;
+  --ok: #4cc584;
+  --ok-soft: #15291d;
+  --warn: #f2ab4f;
+  --warn-soft: #2d2313;
+  --info: #52bde2;
+  --info-soft: #11272f;
+  --danger: #ff5a60;
+  --ring: #52bde2;
   --shadow-color: 0 0% 0%;
   color-scheme: dark;
 }
@@ -97,6 +102,8 @@
   --color-ring: var(--ring);
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  /* Headings and the SEG wordmark: Montserrat, the free geometric face closest to Abrams' Gotham. */
+  --font-display: var(--font-montserrat), var(--font-geist-sans), ui-sans-serif, sans-serif;
   --shadow-card: 0 1px 2px hsl(var(--shadow-color) / 0.05), 0 1px 3px hsl(var(--shadow-color) / 0.04);
   --shadow-pop: 0 10px 30px -8px hsl(var(--shadow-color) / 0.22), 0 2px 6px hsl(var(--shadow-color) / 0.08);
   --animate-fade-in: fade-in 140ms ease-out;
@@ -138,6 +145,12 @@
   }
   * {
     border-color: var(--line);
+  }
+  h1,
+  h2,
+  .font-display {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
   }
   ::selection {
     background: color-mix(in srgb, var(--brand) 22%, transparent);

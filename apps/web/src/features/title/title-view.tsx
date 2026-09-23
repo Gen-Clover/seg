@@ -648,7 +648,7 @@ function SaveIndicator({ status, lastSavedAt }: { status: SaveStatus; lastSavedA
         <Check className="size-3.5 text-ok" /> Saved {timeAgo(new Date(lastSavedAt).toISOString())}
       </span>
     );
-  return <span className="text-xs text-subtle">Changes save automatically</span>;
+  return <span className="text-xs text-muted">Changes save automatically</span>;
 }
 
 function TitleHeader({ data, totals }: { data: TitleDetail; totals: ReturnType<typeof titleTotals> }) {
@@ -663,7 +663,7 @@ function TitleHeader({ data, totals }: { data: TitleDetail; totals: ReturnType<t
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-            {t.season ? <Badge tone="brand">{t.season}</Badge> : null}
+            {t.season ? <Badge tone="info">{t.season}</Badge> : null}
             {t.format ? <Badge>{t.format}</Badge> : null}
             {t.division ? <Badge>{t.division}</Badge> : null}
             {!t.inScope ? <Badge tone="warn">Not in SEG scope</Badge> : null}
@@ -698,10 +698,10 @@ function TitleHeader({ data, totals }: { data: TitleDetail; totals: ReturnType<t
         <Kpi label="Laydown estimate" value={fmtInt(totals.laydownEstimate)} hint={totals.laydownGoal ? `${Math.round(((totals.laydownEstimate ?? 0) / totals.laydownGoal) * 100)}% of goal` : undefined} />
         <Kpi label="6-month estimate" value={fmtInt(totals.sixMonthEstimate)} hint="Including laydown" />
         <Kpi
-          label="Goal vs estimate"
-          value={fmtSigned(gap)}
-          tone={gap === null ? undefined : gap > 0 ? "text-warn" : gap < 0 ? "text-ok" : undefined}
-          hint={gap === null ? "No estimates yet" : gap > 0 ? "Estimate below goal" : gap < 0 ? "Estimate above goal" : "On goal"}
+          label="Estimate vs goal"
+          value={gap === null ? "Not set" : fmtSigned(-gap)}
+          tone={gap === null ? "text-muted text-[17px]" : gap > 0 ? "text-warn" : gap < 0 ? "text-ok" : undefined}
+          hint={gap === null ? "Enter a goal and an estimate in the grid" : gap > 0 ? "Below goal" : gap < 0 ? "Above goal" : "On goal"}
         />
       </div>
     </div>
@@ -768,7 +768,7 @@ function DetailsCard({
           {items.map(([k, v]) => (
             <div key={k} className="min-w-0">
               <dt className="truncate text-xs text-muted">{k}</dt>
-              <dd className="num truncate text-ink">{v}</dd>
+              <dd className={cn("num truncate", v === "—" ? "text-subtle" : "text-ink")}>{v === "—" ? "Not set" : v}</dd>
             </div>
           ))}
         </dl>

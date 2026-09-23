@@ -73,6 +73,11 @@ npm run lint
   imprint / format, coverage, week-by-week trend), exports, upload with preview, meeting report PDF.
 - **Title workspace**: spreadsheet-style grid with autosave, conflict handling, undo / redo,
   live updates and presence, comments on the title or any row, and full change history with restore.
+- **Messages**: team chat — Everyone, groups and direct messages with @mentions and ISBN links —
+  plus the title comment threads you're part of, in one inbox.
+
+SEG stands for **Seasonal Estimate Grid**. The look follows abramsbooks.com (Abrams red, warm greys);
+no third-party APIs are used.
 
 ## Branches and environments
 

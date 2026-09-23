@@ -1,6 +1,7 @@
 "use client";
 
-import { ExternalLink, Home, LayoutDashboard, LogOut, PanelLeft, Search, SquarePen } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { ExternalLink, Home, LayoutDashboard, LogOut, MessagesSquare, PanelLeft, Search, SquarePen } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { Session } from "@/server/auth/session";
@@ -45,7 +46,14 @@ function Sidebar({ user, mainMenuUrl }: { user: Session; mainMenuUrl: string | n
   const toggle = () => setSidebarPref(collapsed ? "expanded" : "collapsed");
 
   const lastTitle = worklist?.isbns[0];
-  const nav = [
+  // Unread team chat messages (cheap count, every 20 s while the tab is visible).
+  const chatUnread = useQuery({
+    queryKey: ["chat", "unread"],
+    queryFn: () => api<{ unread: number }>("/api/chat/unread"),
+    refetchInterval: 20_000,
+    refetchIntervalInBackground: false,
+  });
+  const nav: { href: string; label: string; icon: typeof Home; active: boolean; badge?: number }[] = [
     { href: "/", label: "My Desk", icon: Home, active: pathname === "/" },
     { href: "/summary", label: "Summary", icon: LayoutDashboard, active: pathname === "/summary" },
     {
@@ -54,6 +62,7 @@ function Sidebar({ user, mainMenuUrl }: { user: Session; mainMenuUrl: string | n
       icon: SquarePen,
       active: pathname.startsWith("/titles"),
     },
+    { href: "/chat", label: "Messages", icon: MessagesSquare, active: pathname === "/chat", badge: chatUnread.data?.unread ?? 0 },
   ];
 
   const signOut = async () => {
@@ -101,13 +110,23 @@ function Sidebar({ user, mainMenuUrl }: { user: Session; mainMenuUrl: string | n
             <Link
               href={item.href}
               className={cn(
-                "flex h-8 items-center gap-2.5 rounded-lg px-2 text-[13px] font-medium transition-colors",
+                "relative flex h-8 items-center gap-2.5 rounded-lg px-2 text-[13px] font-medium transition-colors",
                 item.active ? "bg-brand-soft text-brand" : "text-ink-2 hover:bg-surface-2 hover:text-ink",
                 collapsed && "justify-center px-0",
               )}
             >
               <item.icon className="size-4 shrink-0" />
-              {collapsed ? null : item.label}
+              {collapsed ? null : <span className="flex-1">{item.label}</span>}
+              {item.badge ? (
+                <span
+                  className={cn(
+                    "num rounded-full bg-brand px-1.5 text-[11px] font-semibold leading-[18px] text-white",
+                    collapsed && "absolute -right-0.5 -top-0.5 px-1 leading-4",
+                  )}
+                >
+                  {item.badge > 99 ? "99+" : item.badge}
+                </span>
+              ) : null}
             </Link>
           </Tooltip>
         ))}

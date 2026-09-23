@@ -1,17 +1,18 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, AtSign, MessageSquare, Send, Trash2 } from "lucide-react";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, AtSign, MessageSquare, Trash2 } from "lucide-react";
+import { useMemo } from "react";
 import { toast } from "sonner";
 import type { AccountRef } from "@seg/domain";
+import { MentionComposer, MentionText } from "@/components/mention-composer";
 import { Button } from "@/components/ui/button";
-import { Skeleton, Spinner } from "@/components/ui/misc";
+import { Skeleton } from "@/components/ui/misc";
 import { Tooltip } from "@/components/ui/overlay";
 import { api } from "@/lib/api";
 import { initials, personColor } from "@/lib/people";
 import { queryKeys, useComments, useUsers, type CommentView, type Person } from "@/lib/queries";
-import { cn, fmtDate, timeAgo } from "@/lib/utils";
+import { fmtDate, timeAgo } from "@/lib/utils";
 
 /** A conversation: the whole title, or one channel / organization / account row. */
 export interface ThreadTarget {
@@ -231,7 +232,7 @@ function ThreadView({
                     ) : null}
                   </div>
                   <p className="mt-0.5 whitespace-pre-wrap break-words text-[13px] leading-relaxed text-ink-2">
-                    <Highlighted body={c.body} mentionNames={c.mentions.map((e) => names.get(e)).filter((n): n is string => !!n)} />
+                    <MentionText body={c.body} mentionNames={c.mentions.map((e) => names.get(e)).filter((n): n is string => !!n)} />
                   </p>
                 </div>
               </li>
@@ -248,156 +249,22 @@ function ThreadView({
   );
 }
 
-function Highlighted({ body, mentionNames }: { body: string; mentionNames: string[] }) {
-  if (!mentionNames.length) return <>{body}</>;
-  const escaped = mentionNames.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-  const parts = body.split(new RegExp(`(@(?:${escaped.join("|")}))`, "g"));
-  return (
-    <>
-      {parts.map((p, i) =>
-        p.startsWith("@") && mentionNames.includes(p.slice(1)) ? (
-          <span key={i} className="rounded bg-info-soft px-0.5 font-medium text-info">
-            {p}
-          </span>
-        ) : (
-          <span key={i}>{p}</span>
-        ),
-      )}
-    </>
-  );
-}
-
 function Composer({ isbn, target, people }: { isbn: string; target: ThreadTarget; people: Person[] }) {
   const qc = useQueryClient();
-  const input = useRef<HTMLTextAreaElement>(null);
-  const [text, setText] = useState("");
-  const [picked, setPicked] = useState<Map<string, string>>(new Map());
-  const [query, setQuery] = useState<string | null>(null);
-  const [highlight, setHighlight] = useState(0);
-  // Where to put the caret after inserting a mention (applied before the next keystroke can land).
-  const caret = useRef<number | null>(null);
-  useLayoutEffect(() => {
-    if (caret.current === null || !input.current) return;
-    input.current.focus();
-    input.current.setSelectionRange(caret.current, caret.current);
-    caret.current = null;
-  }, [text]);
-
-  const matches = useMemo(() => {
-    if (query === null) return [];
-    const q = query.toLowerCase();
-    return people.filter((p) => p.name.toLowerCase().includes(q) || p.email.toLowerCase().includes(q)).slice(0, 6);
-  }, [people, query]);
-
-  const post = useMutation({
-    mutationFn: () => {
-      const mentions = [...picked].filter(([, name]) => text.includes(`@${name}`)).map(([email]) => email);
-      return api(`/api/titles/${encodeURIComponent(isbn)}/comments`, {
-        method: "POST",
-        json: { level: target.level, ref: target.ref, body: text, mentions },
-      });
-    },
-    onSuccess: () => {
-      setText("");
-      setPicked(new Map());
-      setQuery(null);
-      void qc.invalidateQueries({ queryKey: queryKeys.comments(isbn) });
-    },
-    onError: (err) => toast.error(err instanceof Error ? err.message : "Could not post the comment."),
-  });
-
-  const detect = (value: string, caret: number) => {
-    const m = /(^|\s)@([\w.\-]*)$/.exec(value.slice(0, caret));
-    setQuery(m ? m[2]! : null);
-    setHighlight(0);
-  };
-
-  const choose = (p: Person) => {
-    const el = input.current;
-    const at = el?.selectionStart ?? text.length;
-    const before = text.slice(0, at).replace(/@([\w.\-]*)$/, `@${p.name} `);
-    const next = before + text.slice(at);
-    setText(next);
-    setPicked((m) => new Map(m).set(p.email, p.name));
-    setQuery(null);
-    caret.current = before.length;
-  };
-
-  const send = () => {
-    if (text.trim() && !post.isPending) post.mutate();
-  };
-
   return (
-    <div className="relative border-t border-line p-3">
-      {query !== null && matches.length ? (
-        <ul className="absolute bottom-full left-3 right-3 mb-1 overflow-hidden rounded-lg border border-line bg-surface p-1 shadow-[var(--shadow-pop)]">
-          {matches.map((p, i) => (
-            <li key={p.email}>
-              <button
-                type="button"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  choose(p);
-                }}
-                className={cn("flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px]", i === highlight && "bg-surface-2")}
-              >
-                <span className="flex size-6 items-center justify-center rounded-full text-[10px] font-semibold text-white" style={{ background: personColor(p.email) }}>
-                  {initials(p.name, p.email)}
-                </span>
-                <span className="font-medium">{p.name}</span>
-                <span className="truncate text-xs text-subtle">{p.email}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      <textarea
-        ref={input}
-        value={text}
-        rows={3}
+    <div className="border-t border-line p-3">
+      <MentionComposer
+        people={people}
         placeholder={`Comment on ${target.level === "title" ? "this title" : "this row"} — type @ to mention someone`}
-        onChange={(e) => {
-          setText(e.target.value);
-          detect(e.target.value, e.target.selectionStart);
+        sendLabel="Comment"
+        onSend={async (body, mentions) => {
+          await api(`/api/titles/${encodeURIComponent(isbn)}/comments`, {
+            method: "POST",
+            json: { level: target.level, ref: target.ref, body, mentions },
+          });
+          await qc.invalidateQueries({ queryKey: queryKeys.comments(isbn) });
         }}
-        onKeyDown={(e) => {
-          if (query !== null && matches.length) {
-            if (e.key === "ArrowDown") {
-              e.preventDefault();
-              setHighlight((h) => (h + 1) % matches.length);
-              return;
-            }
-            if (e.key === "ArrowUp") {
-              e.preventDefault();
-              setHighlight((h) => (h - 1 + matches.length) % matches.length);
-              return;
-            }
-            if (e.key === "Enter" || e.key === "Tab") {
-              e.preventDefault();
-              choose(matches[highlight]!);
-              return;
-            }
-            if (e.key === "Escape") {
-              e.preventDefault();
-              e.stopPropagation();
-              setQuery(null);
-              return;
-            }
-          }
-          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-            e.preventDefault();
-            send();
-          }
-        }}
-        className="w-full resize-none rounded-lg border border-line bg-surface px-3 py-2 text-[13px] outline-none placeholder:text-subtle focus:border-brand/60 focus:ring-2 focus:ring-brand/15"
       />
-      <div className="mt-2 flex items-center justify-between">
-        <span className="text-[11px] text-subtle">Ctrl + Enter to send</span>
-        <Button size="sm" variant="brand" onClick={send} disabled={!text.trim() || post.isPending}>
-          {post.isPending ? <Spinner className="size-3.5" /> : <Send />}
-          Comment
-        </Button>
-      </div>
     </div>
   );
 }

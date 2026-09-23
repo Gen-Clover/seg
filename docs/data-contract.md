@@ -62,5 +62,7 @@ Legacy fields not carried over: `printmtdDate` / `main_print_meeting_date` (remo
 | `SEG_TITLE_ACCOUNT_FACTS` | ingestion SQL | read model input |
 | `SEG_TITLE_STATS` | ingestion SQL | read model input |
 | `SEG_ESTIMATE_EVENTS` | app write-back (append-only) | every edit, with who and when |
+| `SEG_CHAT_ROOMS` | app write-back (append-only) | one row per chat room version; latest row per `room_id` is current. Created automatically on first write |
+| `SEG_CHAT_MESSAGES` | app write-back (append-only) | one row per chat message version (posted, edited, deleted). Created automatically on first write |
 | `SEG_COMMENTS` | app write-back (append-only) | one row per comment version (posted, deleted); latest row per `comment_id` is current. Created automatically on first write |
 | `SEG_ESTIMATES_CURRENT` (view) | — | latest value per title / level / combination / field, for Power BI |

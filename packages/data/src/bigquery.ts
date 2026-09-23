@@ -164,6 +164,36 @@ export const COMMENTS_SCHEMA: BqField[] = [
   { name: "deleted_at", type: "TIMESTAMP" },
 ];
 
+/** Team chat rooms (append-only versions; latest row per room_id is current). */
+export const CHAT_ROOMS_TABLE = "SEG_CHAT_ROOMS";
+export const CHAT_ROOMS_SCHEMA: BqField[] = [
+  { name: "room_id", type: "STRING", mode: "REQUIRED" },
+  { name: "version_at", type: "TIMESTAMP", mode: "REQUIRED" },
+  { name: "type", type: "STRING", mode: "REQUIRED" },
+  { name: "name", type: "STRING" },
+  /** Comma-separated e-mails. */
+  { name: "members", type: "STRING" },
+  { name: "created_by", type: "STRING" },
+  { name: "created_at", type: "TIMESTAMP", mode: "REQUIRED" },
+];
+
+/** Team chat messages (append-only versions; latest row per message_id is current). */
+export const CHAT_MESSAGES_TABLE = "SEG_CHAT_MESSAGES";
+export const CHAT_MESSAGES_SCHEMA: BqField[] = [
+  { name: "message_id", type: "STRING", mode: "REQUIRED" },
+  { name: "version_at", type: "TIMESTAMP", mode: "REQUIRED" },
+  { name: "room_id", type: "STRING", mode: "REQUIRED" },
+  { name: "author_email", type: "STRING" },
+  { name: "author_name", type: "STRING" },
+  { name: "body", type: "STRING" },
+  { name: "mentions", type: "STRING" },
+  /** JSON array of {isbn, title}. */
+  { name: "title_refs", type: "STRING" },
+  { name: "created_at", type: "TIMESTAMP", mode: "REQUIRED" },
+  { name: "edited_at", type: "TIMESTAMP" },
+  { name: "deleted_at", type: "TIMESTAMP" },
+];
+
 /** Precomputed outputs of the ingestion SQL (in the app dataset). */
 export const FACTS_TABLE = "SEG_TITLE_ACCOUNT_FACTS";
 export const STATS_TABLE = "SEG_TITLE_STATS";
@@ -428,6 +458,16 @@ export function buildCurrentCommentsSql(cfg: BigQueryConfig): string {
 SELECT * EXCEPT (rn) FROM (
   SELECT *, ROW_NUMBER() OVER (PARTITION BY comment_id ORDER BY version_at DESC) AS rn
   FROM ${q(cfg, "app", COMMENTS_TABLE)}
+) WHERE rn = 1
+`;
+}
+
+/** Latest version of every row of an append-only versioned table (chat rooms / messages). */
+export function buildLatestVersionsSql(cfg: BigQueryConfig, table: string, idColumn: string): string {
+  return `
+SELECT * EXCEPT (rn) FROM (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY ${idColumn} ORDER BY version_at DESC) AS rn
+  FROM ${q(cfg, "app", table)}
 ) WHERE rn = 1
 `;
 }

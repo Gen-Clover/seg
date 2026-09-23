@@ -15,7 +15,7 @@ Items marked **(config)** are environment changes only; **(code)** needs a small
       legacy app's numbers.
 - [ ] Schedule ingestion nightly (client scheduler or BigQuery scheduled query + app job).
 - [ ] **(config)** `WRITEBACK=bigquery`; create `SEG_ESTIMATE_EVENTS` and the `SEG_ESTIMATES_CURRENT` view.
-      (`SEG_COMMENTS` is created by the app on first use; the service account needs table-create rights
+      (`SEG_COMMENTS`, `SEG_CHAT_ROOMS` and `SEG_CHAT_MESSAGES` are created by the app on first use; the service account needs table-create rights
       on the app dataset, or create it up front from `COMMENTS_SCHEMA`.)
 - [ ] Schedule `/api/jobs/trends` (or rely on the nightly ingestion, which also refreshes the dashboard trends).
 - [ ] If existing Power BI reports read the legacy `BIL_SEG_ESTIMATES` table, add a compatibility view

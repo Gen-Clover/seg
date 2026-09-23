@@ -7,8 +7,10 @@ import type { Session } from "@/server/auth/session";
 import type { CommentView, NotificationView } from "@/server/services/comments";
 import type { ChangedTitle } from "@/server/services/desk";
 import type { TitleDetail, TitleSearchHit, TitleSummaryRow } from "@/server/services/titles";
+import type { ChannelInsights } from "@/server/services/insights";
 import type { TrendsView } from "@/server/services/trends";
 import { api } from "./api";
+import { useHydrated } from "./use-hydrated";
 
 export type { ChangedTitle, CommentView, NotificationView, TitleDetail, TitleSearchHit, TitleSummaryRow, TrendsView };
 
@@ -35,11 +37,15 @@ export function useMe() {
 }
 
 export function useSummary() {
-  return useQuery({
+  const query = useQuery({
     queryKey: queryKeys.summary,
     queryFn: () => api<{ titles: TitleSummaryRow[]; generatedAt: string }>("/api/titles"),
     staleTime: 60_000,
   });
+  // The catalog is often already cached (sidebar, search) before a page finishes hydrating:
+  // report "pending" until then so the first client render matches the server HTML.
+  const hydrated = useHydrated();
+  return hydrated ? query : ({ ...query, data: undefined, isPending: true, isSuccess: false, status: "pending" } as typeof query);
 }
 
 export const titleQuery = (isbn: string) => ({
@@ -154,4 +160,13 @@ export function usePersonName() {
   const users = useUsers();
   const names = useMemo(() => new Map((users.data?.users ?? []).map((u) => [u.email, u.name])), [users.data]);
   return useCallback((email: string | null | undefined) => (email ? (names.get(email) ?? email.split("@")[0]!) : "Someone"), [names]);
+}
+
+export function useChannelInsights(enabled: boolean) {
+  return useQuery({
+    queryKey: ["insights", "channels"] as const,
+    queryFn: () => api<ChannelInsights>("/api/insights"),
+    enabled,
+    staleTime: 60_000,
+  });
 }

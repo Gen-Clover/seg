@@ -10,6 +10,11 @@ import {
   buildStatsSql,
   buildTitlesSql,
   buildCurrentCommentsSql,
+  buildLatestVersionsSql,
+  CHAT_MESSAGES_TABLE,
+  CHAT_ROOMS_TABLE,
+  type ChatMessageDoc,
+  type ChatRoomDoc,
   COMMENTS_TABLE,
   type CommentDoc,
   indexOptions,
@@ -48,6 +53,7 @@ export interface IngestResult {
   restoredEstimates: number;
   restoredPlans: number;
   restoredComments: number;
+  restoredChat: number;
   seededUsers: number;
   trendTitles: number;
   totalsRecomputed: number;
@@ -174,6 +180,7 @@ export async function runIngest(options: { rebuildSql: boolean }): Promise<Inges
 
   // 3b. Comments, likewise restored only into an empty collection (BigQuery keeps every version).
   const restoredComments = await restoreComments();
+  const restoredChat = await restoreChat();
 
   // 4. Demo users when the users collection is empty (production signs in with Entra ID).
   let seededUsers = 0;
@@ -222,6 +229,7 @@ export async function runIngest(options: { rebuildSql: boolean }): Promise<Inges
     restoredEstimates,
     restoredPlans,
     restoredComments,
+    restoredChat,
     seededUsers,
     totalsRecomputed: totalOps.length,
     trendTitles,
@@ -269,4 +277,62 @@ async function restoreComments(): Promise<number> {
   }));
   await chunked(docs, 2000, (chunk) => comments.insertMany(chunk, { ordered: false }));
   return docs.length;
+}
+
+/** Restores team chat (rooms and messages) from BigQuery into an empty database. */
+async function restoreChat(): Promise<number> {
+  const messagesCol = await collections.chatMessages();
+  if ((await messagesCol.estimatedDocumentCount()) > 0) return 0;
+  const cfg = bigQueryConfig();
+  const dataset = bigquery().dataset(cfg.appDataset);
+  const [[roomsExist], [messagesExist]] = await Promise.all([dataset.table(CHAT_ROOMS_TABLE).exists(), dataset.table(CHAT_MESSAGES_TABLE).exists()]);
+  if (!roomsExist || !messagesExist) return 0;
+  const ts = (v: unknown) => (v && typeof v === "object" ? String((v as Row).value) : v ? String(v) : null);
+  const syncedAt = new Date().toISOString();
+  const [roomRows, messageRows] = await Promise.all([
+    query(buildLatestVersionsSql(cfg, CHAT_ROOMS_TABLE, "room_id")),
+    query(buildLatestVersionsSql(cfg, CHAT_MESSAGES_TABLE, "message_id")),
+  ]);
+  const messages: ChatMessageDoc[] = messageRows.map((r) => ({
+    _id: String(r.message_id),
+    roomId: String(r.room_id),
+    authorEmail: String(r.author_email ?? ""),
+    authorName: String(r.author_name ?? ""),
+    body: String(r.body ?? ""),
+    mentions: String(r.mentions ?? "").split(",").filter(Boolean),
+    titleRefs: (() => {
+      try {
+        return JSON.parse(String(r.title_refs ?? "[]"));
+      } catch {
+        return [];
+      }
+    })(),
+    createdAt: ts(r.created_at) ?? syncedAt,
+    editedAt: ts(r.edited_at),
+    deletedAt: ts(r.deleted_at),
+    syncedAt,
+  }));
+  const last = new Map<string, ChatMessageDoc>();
+  for (const m of messages) if (!m.deletedAt && (!last.get(m.roomId) || last.get(m.roomId)!.createdAt < m.createdAt)) last.set(m.roomId, m);
+  const rooms: ChatRoomDoc[] = roomRows.map((r) => {
+    const m = last.get(String(r.room_id));
+    const createdAt = ts(r.created_at) ?? syncedAt;
+    return {
+      _id: String(r.room_id),
+      type: String(r.type) as ChatRoomDoc["type"],
+      name: String(r.name ?? ""),
+      members: String(r.members ?? "").split(",").filter(Boolean),
+      createdBy: String(r.created_by ?? ""),
+      createdAt,
+      updatedAt: ts(r.version_at) ?? createdAt,
+      lastMessageAt: m?.createdAt ?? null,
+      lastMessage: m ? { authorName: m.authorName, excerpt: m.body.slice(0, 140) } : null,
+      syncedAt,
+    };
+  });
+  const roomsCol = await collections.chatRooms();
+  await roomsCol.deleteMany({ _id: { $in: rooms.map((r) => r._id) } });
+  await chunked(rooms, 1000, (chunk) => roomsCol.insertMany(chunk, { ordered: false }));
+  await chunked(messages, 2000, (chunk) => messagesCol.insertMany(chunk, { ordered: false }));
+  return messages.length;
 }

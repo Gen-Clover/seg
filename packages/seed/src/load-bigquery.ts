@@ -15,6 +15,10 @@ import { join, resolve } from "node:path";
 import { BigQuery, type TableField } from "@google-cloud/bigquery";
 import { DEFAULT_DOMAIN_CONFIG, ESTIMATE_FIELDS, estimateId, type EstimateRecord } from "@seg/domain";
 import {
+  CHAT_MESSAGES_SCHEMA,
+  CHAT_MESSAGES_TABLE,
+  CHAT_ROOMS_SCHEMA,
+  CHAT_ROOMS_TABLE,
   COMMENTS_SCHEMA,
   COMMENTS_TABLE,
   ESTIMATE_EVENTS_SCHEMA,
@@ -163,6 +167,13 @@ await app.createTable(COMMENTS_TABLE, {
   clustering: { fields: ["isbn"] },
 });
 console.log(`  ${COMMENTS_TABLE.padEnd(28)} created (empty)`);
+// Team chat starts empty too.
+for (const [name, schema, cluster] of [[CHAT_ROOMS_TABLE, CHAT_ROOMS_SCHEMA, "room_id"], [CHAT_MESSAGES_TABLE, CHAT_MESSAGES_SCHEMA, "room_id"]] as const) {
+  const t = app.table(name);
+  if ((await t.exists())[0]) await t.delete();
+  await app.createTable(name, { schema: { fields: toSchema(schema) }, timePartitioning: { type: "DAY", field: "created_at" }, clustering: { fields: [cluster] } });
+  console.log(`  ${name.padEnd(28)} created (empty)`);
+}
 
 console.log("Running ingestion SQL…");
 await query(buildFactsSql(cfg), "SEG_TITLE_ACCOUNT_FACTS");

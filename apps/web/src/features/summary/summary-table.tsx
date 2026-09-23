@@ -92,7 +92,7 @@ export function SummaryTable({
                   hoverTimer.current = setTimeout(() => prefetch(t.isbn), 120);
                 }}
                 onMouseLeave={() => hoverTimer.current && clearTimeout(hoverTimer.current)}
-                className="group absolute left-0 grid w-full cursor-pointer items-center border-b border-line/70 text-[13px] outline-none transition-colors hover:bg-surface-2/70 focus-visible:bg-brand-soft/60"
+                className="group absolute left-0 grid w-full cursor-pointer items-center border-b border-line text-[13px] outline-none transition-colors hover:bg-surface-2/70 focus-visible:bg-brand-soft/60"
                 style={{ gridTemplateColumns: template, height: item.size, transform: `translateY(${item.start}px)` }}
               >
                 {cols.map((c) => (

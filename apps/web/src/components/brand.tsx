@@ -1,24 +1,19 @@
 import { cn } from "@/lib/utils";
 
-/** Product mark. */
+/** Abrams "A" mark (the same image as abramsbooks.com's tab icon). */
 export function BrandMark({ className }: { className?: string }) {
   return (
-    <div className={cn("flex size-8 items-center justify-center rounded-lg bg-brand text-white shadow-sm", className)}>
-      <svg viewBox="0 0 24 24" className="size-[18px]" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-        <path d="M4 19V9" />
-        <path d="M10 19V5" />
-        <path d="M16 19v-7" />
-        <path d="M21 19H3" />
-      </svg>
-    </div>
+    // eslint-disable-next-line @next/next/no-img-element -- tiny static asset; next/image adds nothing here
+    <img src="/brand/abrams-a.png" alt="Abrams" width={32} height={32} className={cn("size-8 shrink-0 rounded-full", className)} />
   );
 }
 
-export function BrandName({ className }: { className?: string }) {
+/** SEG = Seasonal Estimate Grid. */
+export function BrandName({ className, inverted }: { className?: string; inverted?: boolean }) {
   return (
     <div className={cn("leading-tight", className)}>
-      <div className="text-[14px] font-semibold tracking-tight text-ink">SEG</div>
-      <div className="text-[11px] text-muted">Sales Estimates</div>
+      <div className={cn("font-display text-[15px] font-bold tracking-[0.12em]", inverted ? "text-white" : "text-ink")}>SEG</div>
+      <div className={cn("text-[11px]", inverted ? "text-white/65" : "text-muted")}>Seasonal Estimate Grid</div>
     </div>
   );
 }

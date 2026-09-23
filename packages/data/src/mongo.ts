@@ -14,12 +14,15 @@ export const COLLECTIONS = {
   estimates: "estimates",
   estimateEvents: "estimate_events",
   comments: "comments",
+  chatRooms: "chat_rooms",
+  chatMessages: "chat_messages",
   // Operational (not written to BigQuery; safe to lose on a rebuild)
   users: "users",
   jobRuns: "job_runs",
   notifications: "notifications",
   presence: "presence",
   titleVisits: "title_visits",
+  chatReads: "chat_reads",
   // Derived (recomputed from estimates and history)
   trends: "trends",
 } as const;
@@ -138,10 +141,16 @@ export interface NotificationDoc {
   _id: string;
   /** Recipient. */
   email: string;
-  type: "mention" | "reply";
+  /** mention / reply: title comments; chat_mention: a chat message. */
+  type: "mention" | "reply" | "chat_mention";
+  /** Comment or chat message id. */
   commentId: string;
+  /** Title comments: the title and thread. Empty for chat. */
   isbn: string;
   threadKey: string;
+  /** Chat: the room to open. */
+  roomId?: string;
+  /** Title name, or the chat room's name. */
   titleName: string;
   rowLabel: string;
   fromEmail: string;
@@ -149,6 +158,48 @@ export interface NotificationDoc {
   excerpt: string;
   createdAt: string;
   readAt: string | null;
+}
+
+/**
+ * A chat room: "everyone" (the whole team), a named group, or a direct conversation.
+ * Also the outbox for SEG_CHAT_ROOMS (syncedAt reset on every change).
+ */
+export interface ChatRoomDoc {
+  _id: string; // "everyone", "grp:<uuid>" or "dm:<email>|<email>"
+  type: "everyone" | "group" | "direct";
+  name: string;
+  /** E-mails; empty for "everyone" (all active users). */
+  members: string[];
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  lastMessageAt: string | null;
+  lastMessage: { authorName: string; excerpt: string } | null;
+  syncedAt: string | null;
+}
+
+/** A chat message. Also the outbox for SEG_CHAT_MESSAGES (append-only versions). */
+export interface ChatMessageDoc {
+  _id: string;
+  roomId: string;
+  authorEmail: string;
+  authorName: string;
+  body: string;
+  mentions: string[];
+  /** Catalog titles referenced by ISBN in the message (shown as links). */
+  titleRefs: { isbn: string; title: string }[];
+  createdAt: string;
+  editedAt: string | null;
+  deletedAt: string | null;
+  syncedAt: string | null;
+}
+
+/** When a person last read a room (for unread counts). */
+export interface ChatReadDoc {
+  _id: string; // "<roomId>|<email>"
+  roomId: string;
+  email: string;
+  readAt: string;
 }
 
 /** Who is looking at a title right now (heartbeat; expires automatically). */
@@ -233,6 +284,15 @@ export const INDEXES: Record<string, IndexSpec[]> = {
     { key: { isbn: 1, createdAt: 1 }, name: "title" },
     { key: { syncedAt: 1 }, name: "outbox" },
   ],
+  [COLLECTIONS.chatRooms]: [
+    { key: { members: 1, lastMessageAt: -1 }, name: "member" },
+    { key: { syncedAt: 1 }, name: "outbox" },
+  ],
+  [COLLECTIONS.chatMessages]: [
+    { key: { roomId: 1, createdAt: -1 }, name: "room" },
+    { key: { syncedAt: 1 }, name: "outbox" },
+  ],
+  [COLLECTIONS.chatReads]: [{ key: { email: 1 }, name: "email" }],
   [COLLECTIONS.notifications]: [
     { key: { email: 1, createdAt: -1 }, name: "inbox" },
     { key: { email: 1, readAt: 1 }, name: "unread" },

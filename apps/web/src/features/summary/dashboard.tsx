@@ -5,6 +5,7 @@ import { seasonSortKey } from "@seg/domain";
 import { Card, Skeleton } from "@/components/ui/misc";
 import { useTrends, type TitleSummaryRow } from "@/lib/queries";
 import { cn, fmtCompact, fmtDate, fmtInt, fmtSigned } from "@/lib/utils";
+import { ChannelMix, Gaps, HealthStrip, Movers, PubCalendar } from "./insights";
 
 type Dimension = "season" | "division" | "imprint" | "format";
 const DIMENSIONS: { key: Dimension; label: string; get: (t: TitleSummaryRow) => string | null }[] = [
@@ -16,14 +17,28 @@ const DIMENSIONS: { key: Dimension; label: string; get: (t: TitleSummaryRow) => 
 
 const COLORS = { goal: "var(--ink-2)", estimate: "var(--brand)", six: "var(--info)" };
 
-/** Season dashboard for the titles in view: goal vs estimate by group, coverage, and week-by-week movement. */
+/**
+ * Season dashboard for the titles in view: planning health, goal vs estimate by group, coverage,
+ * week-by-week movement, channel mix, publication calendar, movers and gaps.
+ */
 export function SummaryDashboard({ rows }: { rows: TitleSummaryRow[] }) {
   return (
-    <div className="grid gap-4 xl:grid-cols-[1.25fr_1fr]">
-      <GroupChart rows={rows} />
-      <div className="flex flex-col gap-4">
-        <Coverage rows={rows} />
-        <WeeklyChart rows={rows} />
+    <div className="flex flex-col gap-4">
+      <HealthStrip rows={rows} />
+      <div className="grid gap-4 xl:grid-cols-[1.25fr_1fr]">
+        <GroupChart rows={rows} />
+        <div className="flex flex-col gap-4">
+          <Coverage rows={rows} />
+          <WeeklyChart rows={rows} />
+        </div>
+      </div>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <ChannelMix rows={rows} />
+        <PubCalendar rows={rows} />
+      </div>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Movers rows={rows} />
+        <Gaps rows={rows} />
       </div>
     </div>
   );

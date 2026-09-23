@@ -85,7 +85,27 @@ export function SummaryView() {
             {summary.data ? <span className="num">{fmtInt(titles.length)} titles in scope.</span> : null}
           </p>
         </div>
-        <SummaryActions rows={rows} filters={filters} disabled={!summary.data} />
+        <div className="flex items-center gap-2">
+          <div className="flex h-8 items-center rounded-lg border border-line-strong bg-surface p-0.5 text-xs shadow-sm" role="tablist" aria-label="View">
+            {([
+              ["table", "Table", Table2],
+              ["dashboard", "Dashboard", BarChart3],
+            ] as const).map(([key, label, Icon]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={view === key}
+                onClick={() => setView(key)}
+                className={cn("flex items-center gap-1 rounded-md px-2 py-1 font-medium", view === key ? "bg-ink text-surface" : "text-muted hover:text-ink")}
+              >
+                <Icon className="size-3.5" />
+                {label}
+              </button>
+            ))}
+          </div>
+          <SummaryActions rows={rows} filters={filters} disabled={!summary.data} />
+        </div>
       </header>
 
       <Kpis rows={filtered} loading={summary.isPending} />
@@ -129,24 +149,6 @@ export function SummaryView() {
         <span className="num ml-auto text-xs text-muted">
           {summary.data ? `${fmtInt(rows.length)} of ${fmtInt(titles.length)}` : ""}
         </span>
-        <div className="flex rounded-lg border border-line bg-surface p-0.5 text-xs" role="tablist" aria-label="View">
-          {([
-            ["table", "Table", Table2],
-            ["dashboard", "Dashboard", BarChart3],
-          ] as const).map(([key, label, Icon]) => (
-            <button
-              key={key}
-              type="button"
-              role="tab"
-              aria-selected={view === key}
-              onClick={() => setView(key)}
-              className={cn("flex items-center gap-1 rounded-md px-2 py-1 font-medium", view === key ? "bg-ink text-surface" : "text-muted hover:text-ink")}
-            >
-              <Icon className="size-3.5" />
-              {label}
-            </button>
-          ))}
-        </div>
       </div>
 
       {summary.isPending ? (
@@ -193,9 +195,9 @@ function Kpis({ rows, loading }: { rows: TitleSummaryRow[]; loading: boolean }) 
     { label: "Laydown goal", value: fmtCompact(t.goal), sub: "units" },
     { label: "Laydown estimate", value: fmtCompact(t.estimate), sub: t.goal ? `${Math.round((t.estimate / t.goal) * 100)}% of goal` : "units" },
     {
-      label: "Goal vs estimate",
-      value: fmtSigned(t.gap),
-      sub: t.gap > 0 ? "estimate below goal" : t.gap < 0 ? "estimate above goal" : "on goal",
+      label: "Estimate vs goal",
+      value: fmtSigned(-t.gap),
+      sub: t.gap > 0 ? "below goal" : t.gap < 0 ? "above goal" : "on goal",
       tone: t.gap > 0 ? "text-warn" : t.gap < 0 ? "text-ok" : "",
     },
   ];

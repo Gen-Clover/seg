@@ -1,5 +1,19 @@
 import { after } from "next/server";
-import { COMMENTS_SCHEMA, COMMENTS_TABLE, ESTIMATE_EVENTS_TABLE, tableSchema } from "@seg/data";
+import type { Collection, Filter, UpdateFilter } from "mongodb";
+import {
+  CHAT_MESSAGES_SCHEMA,
+  CHAT_MESSAGES_TABLE,
+  CHAT_ROOMS_SCHEMA,
+  CHAT_ROOMS_TABLE,
+  COMMENTS_SCHEMA,
+  COMMENTS_TABLE,
+  ESTIMATE_EVENTS_TABLE,
+  tableSchema,
+  type BqField,
+  type ChatMessageDoc,
+  type ChatRoomDoc,
+  type CommentDoc,
+} from "@seg/data";
 import { bigquery, bigQueryConfig } from "../bigquery";
 import { collections } from "../db";
 import { env } from "../env";
@@ -14,19 +28,23 @@ import { env } from "../env";
  *
  * WRITEBACK=none (demo without BigQuery) keeps events in MongoDB only.
  */
-export async function flushWriteback(limit = 1000): Promise<{ sent: number; pending: number; comments: number }> {
+export async function flushWriteback(limit = 1000): Promise<{ sent: number; pending: number; comments: number; chat: number }> {
   const events = await collections.events();
   if (env().WRITEBACK === "none") {
-    return { sent: 0, pending: await events.countDocuments({ syncedAt: null }), comments: 0 };
+    return { sent: 0, pending: await events.countDocuments({ syncedAt: null }), comments: 0, chat: 0 };
   }
-  // A comments problem must never hold up estimate edits (they are retried on the next run).
+  // A comments/chat problem must never hold up estimate edits (they are retried on the next run).
   const comments = await flushComments(limit).catch((err) => {
     console.error("[writeback] comments flush failed", err);
     return 0;
   });
+  const chat = await flushChat(limit).catch((err) => {
+    console.error("[writeback] chat flush failed", err);
+    return 0;
+  });
 
   const batch = await events.find({ syncedAt: null }).sort({ changedAt: 1 }).limit(limit).toArray();
-  if (!batch.length) return { sent: 0, pending: 0, comments };
+  if (!batch.length) return { sent: 0, pending: 0, comments, chat };
 
   const cfg = bigQueryConfig();
   const str = (v: unknown) => (v === null || v === undefined ? null : String(v));
@@ -55,74 +73,156 @@ export async function flushWriteback(limit = 1000): Promise<{ sent: number; pend
   const syncedAt = new Date().toISOString();
   await events.updateMany({ _id: { $in: batch.map((e) => e._id) } }, { $set: { syncedAt } });
   const pending = await events.countDocuments({ syncedAt: null });
-  return { sent: batch.length, pending, comments };
+  return { sent: batch.length, pending, comments, chat };
 }
 
-const globalForBq = globalThis as unknown as { __segCommentsTable?: Promise<void> };
+const globalForBq = globalThis as unknown as { __segTables?: Map<string, Promise<void>> };
 
-/** Creates SEG_COMMENTS on first use (once per process), so no manual BigQuery setup is needed. */
-function ensureCommentsTable(): Promise<void> {
-  globalForBq.__segCommentsTable ??= (async () => {
-    const table = bigquery().dataset(bigQueryConfig().appDataset).table(COMMENTS_TABLE);
-    const [exists] = await table.exists();
-    if (!exists) {
-      await bigquery()
-        .dataset(bigQueryConfig().appDataset)
-        .createTable(COMMENTS_TABLE, {
-          schema: tableSchema(COMMENTS_SCHEMA),
-          timePartitioning: { type: "DAY", field: "created_at" },
-          clustering: { fields: ["isbn"] },
+/** Creates an app table on first use (once per process), so no manual BigQuery setup is needed. */
+function ensureTable(table: string, schema: BqField[], partitionField: string, cluster: string): Promise<void> {
+  globalForBq.__segTables ??= new Map();
+  let ready = globalForBq.__segTables.get(table);
+  if (!ready) {
+    ready = (async () => {
+      const dataset = bigquery().dataset(bigQueryConfig().appDataset);
+      const [exists] = await dataset.table(table).exists();
+      if (exists) return;
+      await dataset
+        .createTable(table, {
+          schema: tableSchema(schema),
+          timePartitioning: { type: "DAY", field: partitionField },
+          clustering: { fields: [cluster] },
         })
         .catch((err: { code?: number }) => {
           if (err.code !== 409) throw err; // created concurrently
         });
-    }
-  })().catch((err) => {
-    globalForBq.__segCommentsTable = undefined;
-    throw err;
-  });
-  return globalForBq.__segCommentsTable;
+    })().catch((err) => {
+      globalForBq.__segTables?.delete(table);
+      throw err;
+    });
+    globalForBq.__segTables.set(table, ready);
+  }
+  return ready;
 }
 
-/** Appends new comment versions (posts and deletions) to SEG_COMMENTS. */
-async function flushComments(limit: number): Promise<number> {
-  const comments = await collections.comments();
-  const batch = await comments.find({ syncedAt: null }).limit(limit).toArray();
+/**
+ * Appends the current version of every changed document (syncedAt = null) to an append-only
+ * BigQuery table, then marks those versions synced. Used for comments and team chat.
+ */
+async function flushVersioned<T extends { _id: string; syncedAt: string | null }>(opts: {
+  collection: Collection<T>;
+  table: string;
+  schema: BqField[];
+  partitionField: string;
+  cluster: string;
+  limit: number;
+  /** Timestamp identifying this version. */
+  versionOf: (doc: T) => string;
+  row: (doc: T, versionAt: string) => Record<string, unknown>;
+  /** Matches the document only while it is still the version that was sent. */
+  unchanged: (doc: T) => Record<string, unknown>;
+}): Promise<number> {
+  const batch = (await opts.collection.find({ syncedAt: null } as Filter<T>).limit(opts.limit).toArray()) as T[];
   if (!batch.length) return 0;
-  await ensureCommentsTable();
-  const rows = batch.map((c) => {
-    const versionAt = c.deletedAt ?? c.createdAt;
-    return {
-      insertId: `${c._id}:${versionAt}`,
-      json: {
-        comment_id: c._id,
-        version_at: versionAt,
-        isbn: c.isbn,
-        thread_key: c.threadKey,
-        level: c.level,
-        distribution_channel: c.channelId,
-        distribution_channel_name: c.channelName,
-        organization_id: c.orgId,
-        organization_name: c.orgName,
-        account_number: c.accountId,
-        account_name: c.accountName,
-        body: c.body,
-        mentions: c.mentions.join(","),
-        author_email: c.authorEmail,
-        author_name: c.authorName,
-        created_at: c.createdAt,
-        deleted_at: c.deletedAt,
-      },
-    };
+  await ensureTable(opts.table, opts.schema, opts.partitionField, opts.cluster);
+  const rows = batch.map((doc) => {
+    const versionAt = opts.versionOf(doc);
+    return { insertId: `${doc._id}:${versionAt}`, json: opts.row(doc, versionAt) };
   });
-  await bigquery().dataset(bigQueryConfig().appDataset).table(COMMENTS_TABLE).insert(rows, { raw: true });
+  await bigquery().dataset(bigQueryConfig().appDataset).table(opts.table).insert(rows, { raw: true });
   const syncedAt = new Date().toISOString();
   // Only mark versions that did not change again while sending.
-  await comments.bulkWrite(
-    batch.map((c) => ({ updateOne: { filter: { _id: c._id, deletedAt: c.deletedAt }, update: { $set: { syncedAt } } } })),
+  await opts.collection.bulkWrite(
+    batch.map((doc) => ({
+      updateOne: {
+        filter: { _id: doc._id, syncedAt: null, ...opts.unchanged(doc) } as Filter<T>,
+        update: { $set: { syncedAt } } as UpdateFilter<T>,
+      },
+    })),
     { ordered: false },
   );
+  // A document edited during the send no longer matches, stays unsynced, and its new version goes next time.
   return batch.length;
+}
+
+const latest = (...ts: (string | null)[]) => ts.filter((t): t is string => !!t).sort().at(-1)!;
+
+async function flushComments(limit: number): Promise<number> {
+  return flushVersioned<CommentDoc>({
+    collection: await collections.comments(),
+    table: COMMENTS_TABLE,
+    schema: COMMENTS_SCHEMA,
+    partitionField: "created_at",
+    cluster: "isbn",
+    limit,
+    versionOf: (c) => latest(c.createdAt, c.deletedAt),
+    unchanged: (c) => ({ deletedAt: c.deletedAt }),
+    row: (c, versionAt) => ({
+      comment_id: c._id,
+      version_at: versionAt,
+      isbn: c.isbn,
+      thread_key: c.threadKey,
+      level: c.level,
+      distribution_channel: c.channelId,
+      distribution_channel_name: c.channelName,
+      organization_id: c.orgId,
+      organization_name: c.orgName,
+      account_number: c.accountId,
+      account_name: c.accountName,
+      body: c.body,
+      mentions: c.mentions.join(","),
+      author_email: c.authorEmail,
+      author_name: c.authorName,
+      created_at: c.createdAt,
+      deleted_at: c.deletedAt,
+    }),
+  });
+}
+
+async function flushChat(limit: number): Promise<number> {
+  const rooms = await flushVersioned<ChatRoomDoc>({
+    collection: await collections.chatRooms(),
+    table: CHAT_ROOMS_TABLE,
+    schema: CHAT_ROOMS_SCHEMA,
+    partitionField: "created_at",
+    cluster: "room_id",
+    limit,
+    versionOf: (r) => r.updatedAt,
+    unchanged: (r) => ({ updatedAt: r.updatedAt }),
+    row: (r, versionAt) => ({
+      room_id: r._id,
+      version_at: versionAt,
+      type: r.type,
+      name: r.name,
+      members: r.members.join(","),
+      created_by: r.createdBy,
+      created_at: r.createdAt,
+    }),
+  });
+  const messages = await flushVersioned<ChatMessageDoc>({
+    collection: await collections.chatMessages(),
+    table: CHAT_MESSAGES_TABLE,
+    schema: CHAT_MESSAGES_SCHEMA,
+    partitionField: "created_at",
+    cluster: "room_id",
+    limit,
+    versionOf: (m) => latest(m.createdAt, m.editedAt, m.deletedAt),
+    unchanged: (m) => ({ editedAt: m.editedAt, deletedAt: m.deletedAt }),
+    row: (m, versionAt) => ({
+      message_id: m._id,
+      version_at: versionAt,
+      room_id: m.roomId,
+      author_email: m.authorEmail,
+      author_name: m.authorName,
+      body: m.body,
+      mentions: m.mentions.join(","),
+      title_refs: JSON.stringify(m.titleRefs),
+      created_at: m.createdAt,
+      edited_at: m.editedAt,
+      deleted_at: m.deletedAt,
+    }),
+  });
+  return rooms + messages;
 }
 
 /** Runs a flush after the current response has been sent. */

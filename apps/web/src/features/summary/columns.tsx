@@ -59,15 +59,15 @@ export const SUMMARY_COLUMNS: SummaryColumn[] = [
   },
   {
     key: "estimateVsGoal",
-    label: "Goal vs estimate",
-    title: "Laydown goal minus laydown estimate",
+    label: "Estimate vs goal",
+    title: "Laydown estimate minus laydown goal (negative = below goal)",
     width: 108,
     align: "right",
-    value: (t) => t.totals.estimateVsGoal,
+    value: (t) => (t.totals.estimateVsGoal === null ? null : -t.totals.estimateVsGoal),
     render: (t) => {
-      const v = t.totals.estimateVsGoal;
+      const v = t.totals.estimateVsGoal === null ? null : -t.totals.estimateVsGoal;
       return (
-        <span className={cn("num", v === null ? "text-subtle" : v > 0 ? "text-warn" : v < 0 ? "text-ok" : "text-ink-2")}>
+        <span className={cn("num", v === null ? "text-subtle" : v < 0 ? "text-warn" : v > 0 ? "text-ok" : "text-ink-2")}>
           {fmtSigned(v)}
         </span>
       );

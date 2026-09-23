@@ -50,6 +50,9 @@ MongoDB is therefore a disposable working store: it can be rebuilt from BigQuery
 | `estimates` | app | One doc per title × level × combination; `_id` = `estimateId()` |
 | `estimate_events` | app | Append-only history + BigQuery outbox |
 | `comments` | app | Comments on a title or a row (`threadKey` = the row's `estimateId`, or `<isbn>|title`). Also the outbox for `SEG_COMMENTS` |
+| `chat_rooms` | app | Team chat rooms: `everyone`, groups (`grp:<uuid>`), direct (`dm:<a>|<b>`). Outbox for `SEG_CHAT_ROOMS` |
+| `chat_messages` | app | Chat messages (mentions, ISBN links, edits, deletions). Outbox for `SEG_CHAT_MESSAGES` |
+| `chat_reads` | app (operational) | When each person last read each room (unread counts) |
 | `users` | app | Demo credentials; production uses Entra ID but keeps roles here |
 | `notifications` | app (operational) | @mentions and replies per person; not written to BigQuery |
 | `presence` | app (operational) | Who has a title open; heartbeat every 5 s, TTL-expired |
@@ -103,6 +106,8 @@ MongoDB is therefore a disposable working store: it can be rebuilt from BigQuery
 | **Live teamwork** | While a title is open and visible, the browser calls `POST /api/titles/:isbn/live` every 5 s: it records presence (and the cell being edited), records the visit, and returns other viewers plus everything others saved since the last call (read from the history log). Polling needs no extra service and works on serverless hosting; on dedicated servers it can be swapped for WebSockets. |
 | **Undo / redo / restore** | Undo replays earlier values as normal edits, so they autosave, show in history and are conflict-checked. History entries can be restored the same way. |
 | **Comments** | Title and row threads with @mentions; notifications for mentions and replies. Comments are written back to `SEG_COMMENTS` (append-only versions) and restored by the ingestion job into an empty database. |
+| **Team chat** | Messages page: Everyone, groups and direct messages, polled every 3 s while open (no third-party service). @mentions go to the same notification bell; ISBNs in a message link to the title. Title comment threads you're part of are listed under *Title conversations*, so there is one inbox while comments stay attached to their data. Written back to `SEG_CHAT_ROOMS` / `SEG_CHAT_MESSAGES` and restored by ingestion. |
+| **No third-party APIs** | Everything runs on the app, MongoDB and BigQuery. Fonts are bundled at build time. Adding any external service (e-mail, AI, push) needs explicit approval. |
 
 ## Security
 

@@ -47,12 +47,12 @@ export function MultiSelect({
           className={cn(
             "group inline-flex h-8 max-w-[240px] items-center gap-1.5 rounded-lg border px-2.5 text-[13px] shadow-sm transition-colors",
             selected.length
-              ? "border-brand-line bg-brand-soft text-ink"
-              : "border-dashed border-line-strong bg-surface text-ink-2 hover:bg-surface-2",
+              ? "border-info/40 bg-info-soft text-ink"
+              : "border-line-strong bg-surface text-ink-2 hover:border-ink/25 hover:bg-surface-2",
             className,
           )}
         >
-          <span className={cn("font-medium", selected.length && "text-brand")}>{label}</span>
+          <span className={cn("font-medium", selected.length && "text-info")}>{label}</span>
           {summary ? (
             <>
               <span className="h-3.5 w-px bg-brand-line" />

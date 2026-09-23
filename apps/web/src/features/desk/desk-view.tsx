@@ -152,7 +152,7 @@ export function DeskView({ name }: { name: string }) {
             onClick={() => setTab(k.tab)}
             className={cn(
               "rounded-xl border bg-surface px-4 py-3 text-left shadow-[var(--shadow-card)] transition-colors",
-              tab === k.tab ? "border-brand/50 ring-2 ring-brand/15" : "border-line hover:border-line-strong",
+              tab === k.tab ? "border-ink/30 ring-2 ring-ink/10" : "border-line hover:border-line-strong",
             )}
           >
             <div className="flex items-center gap-1.5 text-xs font-medium text-muted">
@@ -243,7 +243,7 @@ export function DeskView({ name }: { name: string }) {
 
 function List({ empty, children }: { empty: string; children: React.ReactNode[] }) {
   if (!children.length) return <p className="px-6 py-16 text-center text-[13px] text-muted">{empty}</p>;
-  return <ul className="divide-y divide-line/70">{children}</ul>;
+  return <ul className="divide-y divide-line">{children}</ul>;
 }
 
 function TitleCell({ title, isbn }: { title?: TitleSummaryRow; isbn: string }) {
@@ -280,10 +280,8 @@ function DueRow({ item, title, onOpen }: { item: DueItem; title?: TitleSummaryRo
   return (
     <RowShell onOpen={onOpen}>
       <TitleCell title={title} isbn={item.isbn} />
-      <div className="hidden flex-wrap justify-end gap-1 md:flex">
-        {item.missing.map((m) => (
-          <Badge key={m}>No {m.toLowerCase()}</Badge>
-        ))}
+      <div className="hidden text-right text-xs text-muted md:block">
+        Missing: <span className="font-medium text-ink-2">{item.missing.map((m) => m.replace("Laydown ", "").toLowerCase()).join(", ")}</span>
       </div>
       <div className="w-44 shrink-0 text-right">
         <Badge tone={item.daysLeft < 0 ? "brand" : item.daysLeft <= 7 ? "warn" : "neutral"}>
@@ -390,7 +388,7 @@ function Mentions() {
 
   const go = (n: NotificationView) => {
     if (!n.readAt) read.mutate({ ids: [n._id] });
-    router.push(`/titles/${n.isbn}?thread=${encodeURIComponent(n.threadKey)}`);
+    router.push(n.type === "chat_mention" ? `/chat?room=${encodeURIComponent(n.roomId ?? "everyone")}` : `/titles/${n.isbn}?thread=${encodeURIComponent(n.threadKey)}`);
   };
 
   return (
@@ -403,7 +401,7 @@ function Mentions() {
           </Button>
         </div>
       ) : null}
-      <ul className="divide-y divide-line/70">
+      <ul className="divide-y divide-line">
         {items.map((n) => (
           <NotificationRow key={n._id} n={n} onOpen={() => go(n)} />
         ))}
@@ -424,9 +422,10 @@ export function NotificationRow({ n, onOpen, compact }: { n: NotificationView; o
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-[13px] text-ink">
-            <span className="font-medium">{n.fromName}</span> {n.type === "mention" ? "mentioned you" : "replied"} on{" "}
-            <span className="font-medium">{n.titleName}</span>
-            <span className="text-muted"> · {n.rowLabel}</span>
+            <span className="font-medium">{n.fromName}</span>{" "}
+            {n.type === "chat_mention" ? "mentioned you in" : n.type === "mention" ? "mentioned you on" : "replied on"}{" "}
+            <span className="font-medium">{n.type === "chat_mention" ? n.titleName : n.titleName}</span>
+            {n.type === "chat_mention" ? null : <span className="text-muted"> · {n.rowLabel}</span>}
           </span>
           <span className="mt-0.5 line-clamp-2 block text-[13px] text-ink-2">{n.excerpt}</span>
           <span className="mt-0.5 block text-[11px] text-subtle">{timeAgo(n.createdAt)}</span>

@@ -4,6 +4,9 @@ import {
   INDEXES,
   indexOptions,
   type AccountDoc,
+  type ChatMessageDoc,
+  type ChatReadDoc,
+  type ChatRoomDoc,
   type CommentDoc,
   type EstimateDoc,
   type EstimateEventDoc,
@@ -74,4 +77,7 @@ export const collections = {
   presence: () => col<PresenceDoc>(COLLECTIONS.presence),
   visits: () => col<TitleVisitDoc>(COLLECTIONS.titleVisits),
   trends: () => col<TrendsDoc>(COLLECTIONS.trends),
+  chatRooms: () => col<ChatRoomDoc>(COLLECTIONS.chatRooms),
+  chatMessages: () => col<ChatMessageDoc>(COLLECTIONS.chatMessages),
+  chatReads: () => col<ChatReadDoc>(COLLECTIONS.chatReads),
 };

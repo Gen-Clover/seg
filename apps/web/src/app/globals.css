@@ -1,0 +1,152 @@
+@import "tailwindcss";
+
+/* Dark mode follows the `.dark` class on <html> (set before paint from the saved preference). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --canvas: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f2f4f7;
+  --surface-3: #e9ecf1;
+  --line: #e4e7ec;
+  --line-strong: #cfd4dc;
+  --ink: #0f1728;
+  --ink-2: #344054;
+  --muted: #667085;
+  --subtle: #98a2b3;
+  --brand: #d4202a;
+  --brand-ink: #ffffff;
+  --brand-soft: #fdeceb;
+  --brand-line: #f7c7c4;
+  --ok: #12a150;
+  --ok-soft: #e7f7ee;
+  --warn: #c97a0a;
+  --warn-soft: #fdf3e2;
+  --info: #2e6be6;
+  --info-soft: #e9f0fd;
+  --danger: #d4202a;
+  --ring: #d4202a;
+  --shadow-color: 220 30% 15%;
+  color-scheme: light;
+}
+
+.dark {
+  --canvas: #0b0d12;
+  --surface: #12151c;
+  --surface-2: #181c25;
+  --surface-3: #212633;
+  --line: #242a36;
+  --line-strong: #323a4a;
+  --ink: #eceef2;
+  --ink-2: #c7ccd6;
+  --muted: #98a1b3;
+  --subtle: #6b7486;
+  --brand: #f0454d;
+  --brand-ink: #ffffff;
+  --brand-soft: #2a1618;
+  --brand-line: #5a2226;
+  --ok: #3ccb7f;
+  --ok-soft: #132a1f;
+  --warn: #f0b04a;
+  --warn-soft: #2d2413;
+  --info: #6c9cff;
+  --info-soft: #141f36;
+  --danger: #f0454d;
+  --ring: #f0454d;
+  --shadow-color: 0 0% 0%;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-brand: var(--brand);
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-line: var(--brand-line);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-danger: var(--danger);
+  --color-ring: var(--ring);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --shadow-card: 0 1px 2px hsl(var(--shadow-color) / 0.05), 0 1px 3px hsl(var(--shadow-color) / 0.04);
+  --shadow-pop: 0 10px 30px -8px hsl(var(--shadow-color) / 0.22), 0 2px 6px hsl(var(--shadow-color) / 0.08);
+  --animate-fade-in: fade-in 140ms ease-out;
+  --animate-pop-in: pop-in 140ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+  body {
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+  * {
+    border-color: var(--line);
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--brand) 22%, transparent);
+  }
+  :focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--ring) 55%, transparent);
+    outline-offset: 1px;
+  }
+  button,
+  [role="button"] {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+}
+
+@layer utilities {
+  .num {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: var(--line-strong);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+}

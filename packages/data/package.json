@@ -1,0 +1,23 @@
+{
+  "name": "@seg/data",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Storage contract: MongoDB collections/indexes and BigQuery tables/SQL. Shared by the web app, the jobs and the seed tools.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./password": "./src/password.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@seg/domain": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "typescript": "^5"
+  }
+}

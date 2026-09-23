@@ -1,0 +1,28 @@
+# Legacy production code — reference only, never committed
+old/
+
+# Secrets
+.env
+.env.*
+!.env.example
+.secrets/
+*.pem
+*-key.json
+
+# Dependencies and build output
+node_modules/
+.next/
+out/
+dist/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# Generated demo data
+packages/seed/output/
+
+# Tooling
+.vercel/
+.turbo/
+.DS_Store
+*.log

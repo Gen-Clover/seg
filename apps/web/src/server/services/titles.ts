@@ -1,0 +1,141 @@
+import type { EstimateDoc, TitleAccountFactDoc, TitleDoc } from "@seg/data";
+import type { AccountFact, CompAccountFact } from "@seg/domain";
+import { collections } from "../db";
+import { HttpError } from "../http";
+
+/** One row of the summary page. Kept small: the whole in-scope catalog is sent at once. */
+export interface TitleSummaryRow {
+  isbn: string;
+  title: string;
+  author: string | null;
+  season: string | null;
+  seasonSort: number;
+  division: string | null;
+  imprint: string | null;
+  format: string | null;
+  usPrice: number | null;
+  pubDate: string | null;
+  releaseDate: string | null;
+  paperCutOff: string | null;
+  ldc: string | null;
+  totals: TitleDoc["totals"];
+  compIsbn: string | null;
+  updatedAt: string | null;
+}
+
+export async function getSummary(): Promise<TitleSummaryRow[]> {
+  const titles = await collections.titles();
+  const docs = await titles
+    .find(
+      { inScope: true },
+      {
+        projection: {
+          _id: 0, isbn: 1, title: 1, author: 1, season: 1, seasonSort: 1, division: 1, imprint: 1, format: 1,
+          usPrice: 1, pubDate: 1, releaseDate: 1, paperCutOff: 1, ldc: 1, totals: 1, "plan.compIsbn": 1, "plan.updatedAt": 1,
+        },
+      },
+    )
+    .sort({ seasonSort: 1, isbn: 1 })
+    .toArray();
+  return docs.map((d) => ({
+    isbn: d.isbn,
+    title: d.title,
+    author: d.author,
+    season: d.season,
+    seasonSort: d.seasonSort,
+    division: d.division,
+    imprint: d.imprint,
+    format: d.format,
+    usPrice: d.usPrice,
+    pubDate: d.pubDate,
+    releaseDate: d.releaseDate,
+    paperCutOff: d.paperCutOff,
+    ldc: d.ldc,
+    totals: d.totals,
+    compIsbn: d.plan?.compIsbn ?? null,
+    updatedAt: d.plan?.updatedAt ?? null,
+  }));
+}
+
+export type TitleInfo = Omit<TitleDoc, "_id" | "search">;
+
+export interface TitleDetail {
+  title: TitleInfo;
+  comp: TitleInfo | null;
+  facts: AccountFact[];
+  compFacts: CompAccountFact[] | null;
+  estimates: EstimateDoc[];
+}
+
+const ref = (d: TitleAccountFactDoc) => ({
+  channelId: d.channelId,
+  channelName: d.channelName,
+  orgId: d.orgId,
+  orgName: d.orgName,
+  accountId: d.accountId,
+  accountName: d.accountName,
+});
+
+/** Drops the Mongo _id (the ISBN is already in the document). */
+function withoutId<T extends { _id: unknown }>(doc: T): Omit<T, "_id"> {
+  const copy: Partial<T> = { ...doc };
+  delete copy._id;
+  return copy as Omit<T, "_id">;
+}
+
+const factProjection = { _id: 0, isbn: 0 } as const;
+
+export async function getTitleDetail(isbn: string): Promise<TitleDetail> {
+  const [titles, facts, estimates] = await Promise.all([collections.titles(), collections.facts(), collections.estimates()]);
+  const title = await titles.findOne({ _id: isbn }, { projection: { search: 0 } });
+  if (!title) throw new HttpError(404, `Title ${isbn} was not found.`);
+  const compIsbn = title.plan?.compIsbn ?? null;
+
+  const [ownFacts, comp, compFacts, estimateDocs] = await Promise.all([
+    facts.find({ isbn, inTitleList: true }, { projection: factProjection }).toArray(),
+    compIsbn ? titles.findOne({ _id: compIsbn }, { projection: { search: 0 } }) : null,
+    compIsbn ? facts.find({ isbn: compIsbn, inCompList: true }, { projection: factProjection }).toArray() : null,
+    estimates.find({ isbn }).toArray(),
+  ]);
+
+  const titleInfo = withoutId(title);
+  const compInfo = comp ? withoutId(comp) : null;
+  return {
+    title: titleInfo,
+    comp: compInfo,
+    facts: ownFacts.map((f) => ({ ...ref(f), initialOrder: f.initialOrder })),
+    compFacts: compFacts
+      ? compFacts.map((f) => ({ ...ref(f), initialOrder: f.initialOrder, grossUnits: f.grossUnits, netUnits: f.netUnits, readerlinkPos: f.readerlinkPos }))
+      : null,
+    estimates: estimateDocs,
+  };
+}
+
+export interface TitleSearchHit {
+  isbn: string;
+  title: string;
+  author: string | null;
+  season: string | null;
+  format: string | null;
+}
+
+const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Any catalog title (including backlist) — used to pick comparable titles and for global search. */
+export async function searchTitles(query: string, limit = 20): Promise<TitleSearchHit[]> {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const titles = await collections.titles();
+  const docs = await titles
+    .find(
+      {
+        search: { $regex: escapeRegex(q) },
+        ipmFormat: { $ne: "EB" },
+        format: { $not: /catalog|display/i },
+      },
+      { projection: { _id: 0, isbn: 1, title: 1, author: 1, season: 1, format: 1 } },
+    )
+    .limit(limit)
+    .toArray();
+  return docs;
+}

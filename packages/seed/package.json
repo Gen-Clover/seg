@@ -1,0 +1,29 @@
+{
+  "name": "@seg/seed",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Demo data: generates fictional source data in the legacy BigQuery layout and loads it into BigQuery and MongoDB.",
+  "type": "module",
+  "scripts": {
+    "generate": "tsx src/generate.ts",
+    "load:mongo": "tsx src/load-mongo.ts",
+    "load:bigquery": "tsx src/load-bigquery.ts",
+    "db:local": "tsx src/local-db.ts",
+    "inspect": "tsx src/inspect.ts",
+    "typecheck": "tsc --noEmit",
+    "verify:bigquery": "tsx src/verify-bigquery.ts"
+  },
+  "dependencies": {
+    "@google-cloud/bigquery": "^9.1.0",
+    "@seg/data": "*",
+    "@seg/domain": "*",
+    "mongodb": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "mongodb-memory-server": "^11.3.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5",
+    "vitest": "^4.1.0"
+  }
+}

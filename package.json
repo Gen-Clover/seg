@@ -1,0 +1,24 @@
+{
+  "name": "seg-platform",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20.9"
+  },
+  "scripts": {
+    "dev": "npm run dev -w @seg/web",
+    "build": "npm run build -w @seg/web",
+    "start": "npm run start -w @seg/web",
+    "lint": "npm run lint -w @seg/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "seed:generate": "npm run generate -w @seg/seed",
+    "seed:bigquery": "npm run load:bigquery -w @seg/seed",
+    "seed:mongo": "npm run load:mongo -w @seg/seed",
+    "seed:inspect": "npm run inspect -w @seg/seed",
+    "db:local": "npm run db:local -w @seg/seed"
+  }
+}

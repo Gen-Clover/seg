@@ -24,3 +24,18 @@ export async function searchAccounts(params: {
     .limit(Math.min(params.limit ?? 50, 200))
     .toArray();
 }
+
+/** Returns the reference accounts matching the given combinations (unknown ones are left out). */
+export async function resolveAccounts(
+  keys: { channelId: string | null; orgId: string | null; accountId: string | null }[],
+): Promise<AccountRef[]> {
+  const wanted = keys.filter((k) => k.channelId && k.orgId && k.accountId);
+  if (!wanted.length) return [];
+  const accounts = await collections.accounts();
+  return accounts
+    .find(
+      { $or: wanted.map((k) => ({ channelId: k.channelId, orgId: k.orgId, accountId: k.accountId })) },
+      { projection: { _id: 0, search: 0 } },
+    )
+    .toArray();
+}

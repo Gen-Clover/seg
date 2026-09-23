@@ -111,6 +111,62 @@ export async function getTitleDetail(isbn: string): Promise<TitleDetail> {
   };
 }
 
+/** Most titles one batch request may ask for (keeps responses well under the platform payload limit). */
+export const MAX_BATCH_TITLES = 60;
+
+/**
+ * Details for many titles in four queries (exports, uploads, reports).
+ * `missing` lists requested ISBNs that are not in the catalog.
+ */
+export async function getTitleDetails(isbns: string[]): Promise<{ titles: TitleDetail[]; missing: string[] }> {
+  const wanted = [...new Set(isbns)];
+  const [titlesCol, factsCol, estimatesCol] = await Promise.all([collections.titles(), collections.facts(), collections.estimates()]);
+  const titleDocs = await titlesCol.find({ _id: { $in: wanted } }, { projection: { search: 0 } }).toArray();
+  const byIsbn = new Map(titleDocs.map((t) => [t._id, t]));
+  const compIsbns = [...new Set(titleDocs.map((t) => t.plan?.compIsbn).filter((c): c is string => !!c))];
+
+  const [compDocs, factDocs, estimateDocs] = await Promise.all([
+    compIsbns.length ? titlesCol.find({ _id: { $in: compIsbns } }, { projection: { search: 0 } }).toArray() : [],
+    factsCol
+      .find({ $or: [{ isbn: { $in: titleDocs.map((t) => t._id) }, inTitleList: true }, { isbn: { $in: compIsbns }, inCompList: true }] })
+      .toArray(),
+    estimatesCol.find({ isbn: { $in: titleDocs.map((t) => t._id) } }).toArray(),
+  ]);
+  const compByIsbn = new Map(compDocs.map((t) => [t._id, t]));
+  const own = new Map<string, TitleAccountFactDoc[]>();
+  const asComp = new Map<string, TitleAccountFactDoc[]>();
+  for (const f of factDocs) {
+    if (f.inTitleList && byIsbn.has(f.isbn)) push(own, f.isbn, f);
+    if (f.inCompList && compByIsbn.has(f.isbn)) push(asComp, f.isbn, f);
+  }
+  const estimates = new Map<string, EstimateDoc[]>();
+  for (const e of estimateDocs) push(estimates, e.isbn, e);
+
+  const titles: TitleDetail[] = [];
+  for (const isbn of wanted) {
+    const title = byIsbn.get(isbn);
+    if (!title) continue;
+    const compIsbn = title.plan?.compIsbn ?? null;
+    const comp = compIsbn ? compByIsbn.get(compIsbn) : undefined;
+    titles.push({
+      title: withoutId(title),
+      comp: comp ? withoutId(comp) : null,
+      facts: (own.get(isbn) ?? []).map((f) => ({ ...ref(f), initialOrder: f.initialOrder })),
+      compFacts: comp
+        ? (asComp.get(comp._id) ?? []).map((f) => ({ ...ref(f), initialOrder: f.initialOrder, grossUnits: f.grossUnits, netUnits: f.netUnits, readerlinkPos: f.readerlinkPos }))
+        : null,
+      estimates: estimates.get(isbn) ?? [],
+    });
+  }
+  return { titles, missing: wanted.filter((i) => !byIsbn.has(i)) };
+}
+
+function push<T>(map: Map<string, T[]>, key: string, value: T) {
+  const list = map.get(key);
+  if (list) list.push(value);
+  else map.set(key, [value]);
+}
+
 export interface TitleSearchHit {
   isbn: string;
   title: string;

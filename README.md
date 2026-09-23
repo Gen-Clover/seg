@@ -65,6 +65,18 @@ npm run typecheck # all workspaces
 npm run lint
 ```
 
+## Branches and environments
+
+| Branch | Vercel environment | MongoDB database | Writes to BigQuery |
+|---|---|---|---|
+| `main` | Production (client demo) | `seg` | yes (`WRITEBACK=bigquery`) |
+| `dev` | Preview (testing before release) | `seg_dev` | no (`WRITEBACK=none`) |
+| `feature/*` | Preview | `seg_dev` | no |
+
+Work happens on `feature/*` branches, is merged into `dev` for testing, and reaches `main` once approved.
+A new database is filled from BigQuery by calling `/api/jobs/ingest` with `Authorization: Bearer $CRON_SECRET`
+(the nightly cron does this for production only).
+
 ## Demo vs production
 
 Everything that differs is behind configuration — see [docs/PRODUCTION_CUTOVER.md](docs/PRODUCTION_CUTOVER.md).

@@ -37,7 +37,8 @@ let cached: Env | null = null;
 export function env(): Env {
   if (cached) return cached;
   loadRootEnv();
-  const parsed = schema.safeParse(process.env);
+  // The Vercel MongoDB Atlas integration names its variable `<PREFIX>_URL`.
+  const parsed = schema.safeParse({ ...process.env, MONGODB_URI: process.env.MONGODB_URI || process.env.MONGODB_URL });
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
     throw new Error(`Invalid server configuration — ${issues}`);

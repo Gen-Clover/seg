@@ -33,6 +33,40 @@ function rowLabel(e: HistoryItem): { level: string; name: string } {
 }
 
 const show = (v: string | number | null) => (v === null || v === "" ? "—" : typeof v === "number" ? fmtInt(v) : v);
+const isBlank = (v: string | number | null) => v === null || v === "";
+
+/** Added (was empty), Cleared (now empty) or Edited. */
+function changeKind(e: HistoryItem): { label: string; tone: "ok" | "warn" | "info" } {
+  if (isBlank(e.oldValue)) return { label: "Added", tone: "ok" };
+  if (isBlank(e.newValue)) return { label: "Cleared", tone: "warn" };
+  return { label: "Edited", tone: "info" };
+}
+
+/** A history value; long text is cut to two lines with "Show more". */
+function Value({ v, tone }: { v: string | number | null; tone: "old" | "new" }) {
+  const [open, setOpen] = useState(false);
+  const text = show(v);
+  const long = typeof v === "string" && v.length > 90;
+  return (
+    <span className="min-w-0">
+      <span
+        className={cn(
+          "inline rounded px-1.5 py-0.5 break-words [box-decoration-break:clone]",
+          tone === "old" ? "bg-[color-mix(in_srgb,var(--danger)_9%,transparent)] text-ink-2 line-through decoration-danger/40" : "bg-ok-soft font-medium text-ink",
+          isBlank(v) && "no-underline text-subtle",
+          long && !open && "line-clamp-2",
+        )}
+      >
+        {isBlank(v) ? "empty" : text}
+      </span>
+      {long ? (
+        <button type="button" onClick={() => setOpen((o) => !o)} className="ml-1 text-[11px] font-medium text-info hover:underline">
+          {open ? "Show less" : "Show more"}
+        </button>
+      ) : null}
+    </span>
+  );
+}
 const localDay = (iso: string) => {
   const d = new Date(iso);
   const p = (n: number) => String(n).padStart(2, "0");
@@ -187,6 +221,7 @@ function HistoryList({
                       <div className="flex items-center gap-2 text-xs text-muted">
                         <span className="font-medium text-ink-2">{who(e.changedBy)}</span>
                         <span>{clockTime(e.changedAt)}</span>
+                        <Badge tone={changeKind(e).tone}>{changeKind(e).label}</Badge>
                         {e.source !== "grid" ? (
                           <Badge tone={e.source === "upload" ? "info" : "neutral"} className="capitalize">
                             {e.source}
@@ -210,10 +245,10 @@ function HistoryList({
                         <span className="text-muted"> · {r.name}</span>
                         <span className="ml-1.5 text-[11px] text-subtle">{r.level}</span>
                       </div>
-                      <div className="num mt-1 flex items-start gap-1.5 text-[13px]">
-                        <span className="min-w-0 break-words text-subtle line-through decoration-subtle/60">{show(e.oldValue)}</span>
-                        <ArrowRight className="mt-0.5 size-3.5 shrink-0 text-subtle" />
-                        <span className="min-w-0 break-words font-medium text-ink">{show(e.newValue)}</span>
+                      <div className="num mt-1.5 flex items-start gap-2 text-[13px]">
+                        <Value v={e.oldValue} tone="old" />
+                        <ArrowRight className="mt-0.5 size-4 shrink-0 text-muted" />
+                        <Value v={e.newValue} tone="new" />
                       </div>
                     </li>
                   );

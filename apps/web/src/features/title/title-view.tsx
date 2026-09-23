@@ -11,8 +11,10 @@ import {
   ChevronsUpDown,
   CloudOff,
   Copy,
+  ExternalLink,
   Eye,
   History,
+  Keyboard,
   MessageSquare,
   Redo2,
   Search,
@@ -38,7 +40,7 @@ import {
 } from "@seg/domain";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, Input, Kbd, Skeleton, Spinner, Textarea } from "@/components/ui/misc";
-import { Tooltip } from "@/components/ui/overlay";
+import { Popover, PopoverContent, PopoverTrigger, Tooltip } from "@/components/ui/overlay";
 import { api } from "@/lib/api";
 import { initials, personColor } from "@/lib/people";
 import { queryKeys, useComments, useMe, usePrefetchTitle, useSummary, useTitle, type TitleDetail } from "@/lib/queries";
@@ -185,10 +187,12 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
   }, [live.viewers]);
   const openThread = useCallback((key: string) => setPanel({ open: true, tab: "comments", thread: threadTarget(isbn, key) }), [isbn]);
 
+  const [notesSavedAt, setNotesSavedAt] = useState<number | null>(null);
   const plan = useMutation({
     mutationFn: (change: { compIsbn?: string | null; titleNotes?: string }) =>
       api(`/api/titles/${encodeURIComponent(isbn)}/plan`, { method: "PATCH", json: change }),
     onSuccess: async (_r, change) => {
+      if (change.titleNotes !== undefined) setNotesSavedAt(Date.now());
       if (change.compIsbn !== undefined) {
         await qc.invalidateQueries({ queryKey: queryKeys.title(isbn) });
         qc.setQueryData<{ titles: { isbn: string; compIsbn: string | null }[] }>(queryKeys.summary, (old) =>
@@ -312,17 +316,33 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
         <div className="flex flex-col gap-4 px-5 pb-6 lg:px-6">
           <TitleHeader data={data} totals={totals} />
           <div className="grid gap-4 xl:grid-cols-[1.35fr_1fr]">
-            <DetailsCard data={data} canEdit={canEdit} onNotes={(titleNotes) => plan.mutate({ titleNotes })} />
+            <DetailsCard
+              data={data}
+              canEdit={canEdit}
+              onNotes={(titleNotes) => plan.mutate({ titleNotes })}
+              notesSaving={plan.isPending && plan.variables?.titleNotes !== undefined}
+              notesSavedAt={notesSavedAt}
+            />
             <CompPanel
               isbn={isbn}
               comp={data.comp}
               canEdit={canEdit}
               saving={plan.isPending && plan.variables?.compIsbn !== undefined}
-              onChange={(compIsbn) => plan.mutate({ compIsbn })}
+              onChange={(compIsbn) => {
+                const previous = data.comp;
+                plan.mutate({ compIsbn });
+                // Removal is one click: offer an easy way back.
+                if (compIsbn === null && previous) {
+                  toast(`Comparable title removed: ${previous.title}`, {
+                    duration: 8000,
+                    action: { label: "Undo", onClick: () => plan.mutate({ compIsbn: previous.isbn }) },
+                  });
+                }
+              }}
             />
           </div>
 
-          <Card className="flex h-[calc(100vh-96px)] min-h-[480px] flex-col overflow-hidden">
+          <Card className="flex flex-col overflow-hidden">
             <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2.5">
               <div className="relative w-64">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-subtle" />
@@ -357,10 +377,11 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
               ) : null}
               <div className="ml-auto flex items-center gap-3">
                 <Legend />
+                <ShortcutsHelp />
                 {canEdit ? <AddAccountDialog onPick={addAccount} /> : null}
               </div>
             </div>
-            <div className="min-h-0 flex-1">
+            <div>
               <EstimatesGrid
                 ref={gridRef}
                 isbn={isbn}
@@ -403,19 +424,59 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
   );
 }
 
+/** What the grid's number styles mean, in plain words. */
 function Legend() {
   return (
-    <div className="hidden items-center gap-3 text-[11px] text-muted lg:flex">
-      <span className="flex items-center gap-1">
-        <span className="num italic text-subtle">1,240</span> total of rows below
-      </span>
-      <span className="flex items-center gap-1">
-        <span className="size-1.5 rounded-full bg-info" /> overrides rows below
-      </span>
-      <span className="flex items-center gap-1">
-        <Kbd>Enter</Kbd> edit · <Kbd>Ctrl V</Kbd> paste from Excel
-      </span>
+    <div className="hidden items-center gap-4 text-xs text-ink-2 lg:flex">
+      <Tooltip content="Grey italic numbers add up the rows below. Type over one to set that level yourself.">
+        <span className="flex cursor-help items-center gap-1.5">
+          <span className="num italic text-muted">1,240</span> Total of the rows below
+        </span>
+      </Tooltip>
+      <Tooltip content="A value typed on a channel or organization row replaces the total of its rows below.">
+        <span className="flex cursor-help items-center gap-1.5">
+          <span className="size-2 rounded-full bg-info" /> Manual value (overrides the rows below)
+        </span>
+      </Tooltip>
     </div>
+  );
+}
+
+const SHORTCUTS: [string, string][] = [
+  ["Enter or F2", "Edit the selected cell"],
+  ["Type a number", "Replace the value"],
+  ["Delete", "Clear the cell"],
+  ["Arrows / Tab", "Move between cells"],
+  ["Ctrl V", "Paste a block copied from Excel"],
+  ["Ctrl C", "Copy the cell"],
+  ["Ctrl Z / Ctrl Y", "Undo / redo"],
+  ["Alt ← / Alt →", "Previous / next title"],
+];
+
+function ShortcutsHelp() {
+  return (
+    <Popover>
+      <Tooltip content="Keyboard shortcuts">
+        <PopoverTrigger asChild>
+          <Button size="icon-sm" variant="ghost" aria-label="Keyboard shortcuts">
+            <Keyboard />
+          </Button>
+        </PopoverTrigger>
+      </Tooltip>
+      <PopoverContent align="end" className="w-72 p-3">
+        <div className="mb-2 text-[13px] font-semibold">Keyboard shortcuts</div>
+        <dl className="space-y-1.5 text-[13px]">
+          {SHORTCUTS.map(([k, v]) => (
+            <div key={k} className="flex items-center justify-between gap-3">
+              <dt className="text-ink-2">{v}</dt>
+              <dd>
+                <Kbd>{k}</Kbd>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -620,10 +681,12 @@ function TitleHeader({ data, totals }: { data: TitleDetail; totals: ReturnType<t
             {t.plan.updatedAt ? (
               <>
                 <span className="text-line-strong">•</span>
-                <span>
-                  Updated {timeAgo(t.plan.updatedAt)}
-                  {t.plan.updatedBy ? ` by ${t.plan.updatedBy.split("@")[0]}` : ""}
-                </span>
+                <Tooltip content={new Date(t.plan.updatedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}>
+                  <span className="cursor-default">
+                    Updated {timeAgo(t.plan.updatedAt)}
+                    {t.plan.updatedBy ? ` by ${t.plan.updatedBy.split("@")[0]}` : ""}
+                  </span>
+                </Tooltip>
               </>
             ) : null}
           </div>
@@ -655,18 +718,33 @@ function Kpi({ label, value, hint, tone }: { label: string; value: string; hint?
   );
 }
 
-function DetailsCard({ data, canEdit, onNotes }: { data: TitleDetail; canEdit: boolean; onNotes: (notes: string) => void }) {
+const NOTES_LIMIT = 4000;
+
+function DetailsCard({
+  data,
+  canEdit,
+  onNotes,
+  notesSaving,
+  notesSavedAt,
+}: {
+  data: TitleDetail;
+  canEdit: boolean;
+  onNotes: (notes: string) => void;
+  notesSaving: boolean;
+  notesSavedAt: number | null;
+}) {
   const t = data.title;
   const [notes, setNotes] = useState(t.plan.titleNotes);
-  const saved = useRef(t.plan.titleNotes);
+  const [sent, setSent] = useState(t.plan.titleNotes);
   useEffect(() => {
-    if (notes === saved.current) return;
+    if (notes === sent) return;
     const timer = setTimeout(() => {
-      saved.current = notes;
+      setSent(notes);
       onNotes(notes);
     }, 900);
     return () => clearTimeout(timer);
-  }, [notes, onNotes]);
+  }, [notes, sent, onNotes]);
+  const noteStatus = notes !== sent || notesSaving ? "Saving…" : notesSavedAt ? `Saved ${timeAgo(new Date(notesSavedAt).toISOString())}` : null;
 
   const items: [string, string][] = [
     ["Pub date", fmtDate(t.pubDate)],
@@ -695,23 +773,57 @@ function DetailsCard({ data, canEdit, onNotes }: { data: TitleDetail; canEdit: b
           ))}
         </dl>
         {t.competitiveTitles.length ? (
-          <p className="mt-3 truncate text-xs text-muted">
-            Competitive titles: <span className="num text-ink-2">{t.competitiveTitles.join(", ")}</span>
-          </p>
+          <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs">
+            <span className="text-muted">Competitive titles:</span>
+            {t.competitiveTitles.map((c) => {
+              const name = data.competitive.find((x) => x.isbn === c)?.title;
+              return name ? (
+                <Tooltip key={c} content="Open in new tab">
+                  <a
+                    href={`/titles/${c}`}
+                    target="_blank"
+                    rel="noopener"
+                    className="inline-flex items-center gap-1 font-medium text-info hover:underline"
+                  >
+                    {name} <span className="num font-normal text-muted">{c}</span>
+                    <ExternalLink className="size-3" />
+                  </a>
+                </Tooltip>
+              ) : (
+                <span key={c} className="num text-ink-2">
+                  {c}
+                </span>
+              );
+            })}
+          </div>
         ) : null}
       </div>
       <div className="flex flex-col">
-        <label htmlFor="title-notes" className="mb-2.5 text-[13px] font-semibold">
-          Title notes
-        </label>
+        <div className="mb-2.5 flex items-baseline justify-between gap-2">
+          <label htmlFor="title-notes" className="text-[13px] font-semibold">
+            Title notes
+          </label>
+          {canEdit && noteStatus ? (
+            <span className={cn("flex items-center gap-1 text-xs", noteStatus === "Saving…" ? "text-muted" : "text-ok")}>
+              {noteStatus === "Saving…" ? <Spinner className="size-3" /> : <Check className="size-3.5" />}
+              {noteStatus}
+            </span>
+          ) : null}
+        </div>
         <Textarea
           id="title-notes"
           value={notes}
+          maxLength={NOTES_LIMIT}
           onChange={(e) => setNotes(e.target.value)}
           readOnly={!canEdit}
-          placeholder={canEdit ? "Notes for the whole title — saved automatically" : "No notes"}
-          className="min-h-28 flex-1"
+          placeholder={canEdit ? "Add a note for the whole title… (saved automatically)" : "No notes"}
+          className="field-sizing-content max-h-64 min-h-20 focus:border-info/60 focus:ring-info/15"
         />
+        {canEdit ? (
+          <div className={cn("mt-1 text-right text-[11px]", notes.length > NOTES_LIMIT * 0.9 ? "text-warn" : "text-subtle")}>
+            {fmtInt(notes.length)} / {fmtInt(NOTES_LIMIT)}
+          </div>
+        ) : null}
       </div>
     </Card>
   );

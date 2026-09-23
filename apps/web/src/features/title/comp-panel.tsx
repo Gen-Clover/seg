@@ -1,12 +1,11 @@
 "use client";
 
 import { Command } from "cmdk";
-import { ArrowUpRight, Repeat2, Search, X } from "lucide-react";
-import Link from "next/link";
+import { ExternalLink, Repeat2, Search, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, Spinner } from "@/components/ui/misc";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/overlay";
+import { Popover, PopoverContent, PopoverTrigger, Tooltip } from "@/components/ui/overlay";
 import { useTitleSearch, type TitleDetail } from "@/lib/queries";
 import { fmtDate, fmtInt, fmtMoney } from "@/lib/utils";
 
@@ -34,19 +33,29 @@ export function CompPanel({
           {saving ? <Spinner className="text-muted" /> : null}
           {canEdit ? <CompPicker isbn={isbn} hasComp={!!comp} onPick={onChange} /> : null}
           {canEdit && comp ? (
-            <Button variant="ghost" size="icon-sm" onClick={() => onChange(null)} aria-label="Remove comparable title">
-              <X />
-            </Button>
+            <Tooltip content="Remove comparable title">
+              <Button variant="ghost" size="icon-sm" onClick={() => onChange(null)} aria-label="Remove comparable title">
+                <X />
+              </Button>
+            </Tooltip>
           ) : null}
         </div>
       </div>
       {comp ? (
         <div className="grid flex-1 gap-3 p-4">
           <div className="min-w-0">
-            <Link href={`/titles/${comp.isbn}`} className="group inline-flex max-w-full items-center gap-1 text-[15px] font-semibold hover:text-brand">
-              <span className="truncate">{comp.title}</span>
-              <ArrowUpRight className="size-3.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
-            </Link>
+            {/* A real link in a new tab: the current title (and the user's place in the grid) stays open. */}
+            <Tooltip content="Open in new tab">
+              <a
+                href={`/titles/${comp.isbn}`}
+                target="_blank"
+                rel="noopener"
+                className="inline-flex max-w-full items-center gap-1.5 text-[15px] font-semibold text-ink underline-offset-2 hover:text-info hover:underline"
+              >
+                <span className="truncate">{comp.title}</span>
+                <ExternalLink className="size-3.5 shrink-0 text-muted" />
+              </a>
+            </Tooltip>
             <p className="num truncate text-xs text-muted">
               {comp.isbn} · {comp.author ?? "—"} · {comp.season ?? "—"}
             </p>
@@ -56,9 +65,9 @@ export function CompPanel({
             <Stat label="eBook sales" value={fmtInt(comp.stats.ebookUnits)} />
             <Stat label="BookScan" value={fmtInt(comp.stats.bookscanLtd)} />
           </div>
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[13px]">
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-[13px] sm:grid-cols-3">
             <Row k="Pub date" v={fmtDate(comp.pubDate)} />
-            <Row k="Release" v={fmtDate(comp.releaseDate)} />
+            <Row k="Release date" v={fmtDate(comp.releaseDate)} />
             <Row k="Format" v={comp.format ?? "—"} />
             <Row k="US price" v={fmtMoney(comp.usPrice)} />
             <Row k="Division" v={comp.division ?? "—"} />
@@ -90,11 +99,12 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** Label above value, left-aligned — the same layout as Title details. */
 function Row({ k, v }: { k: string; v: string }) {
   return (
-    <div className="flex min-w-0 justify-between gap-2">
-      <dt className="text-muted">{k}</dt>
-      <dd className="truncate text-right text-ink-2">{v}</dd>
+    <div className="min-w-0">
+      <dt className="truncate text-xs text-muted">{k}</dt>
+      <dd className="num truncate text-ink">{v}</dd>
     </div>
   );
 }

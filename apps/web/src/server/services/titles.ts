@@ -65,6 +65,8 @@ export interface TitleDetail {
   facts: AccountFact[];
   compFacts: CompAccountFact[] | null;
   estimates: EstimateDoc[];
+  /** Names of the catalog's competitive titles (unknown ISBNs are left out). */
+  competitive: { isbn: string; title: string }[];
 }
 
 const ref = (d: TitleAccountFactDoc) => ({
@@ -91,11 +93,14 @@ export async function getTitleDetail(isbn: string): Promise<TitleDetail> {
   if (!title) throw new HttpError(404, `Title ${isbn} was not found.`);
   const compIsbn = title.plan?.compIsbn ?? null;
 
-  const [ownFacts, comp, compFacts, estimateDocs] = await Promise.all([
+  const [ownFacts, comp, compFacts, estimateDocs, competitive] = await Promise.all([
     facts.find({ isbn, inTitleList: true }, { projection: factProjection }).toArray(),
     compIsbn ? titles.findOne({ _id: compIsbn }, { projection: { search: 0 } }) : null,
     compIsbn ? facts.find({ isbn: compIsbn, inCompList: true }, { projection: factProjection }).toArray() : null,
     estimates.find({ isbn }).toArray(),
+    title.competitiveTitles.length
+      ? titles.find({ _id: { $in: title.competitiveTitles } }, { projection: { _id: 0, isbn: 1, title: 1 } }).toArray()
+      : [],
   ]);
 
   const titleInfo = withoutId(title);
@@ -108,6 +113,7 @@ export async function getTitleDetail(isbn: string): Promise<TitleDetail> {
       ? compFacts.map((f) => ({ ...ref(f), initialOrder: f.initialOrder, grossUnits: f.grossUnits, netUnits: f.netUnits, readerlinkPos: f.readerlinkPos }))
       : null,
     estimates: estimateDocs,
+    competitive,
   };
 }
 
@@ -156,6 +162,7 @@ export async function getTitleDetails(isbns: string[]): Promise<{ titles: TitleD
         ? (asComp.get(comp._id) ?? []).map((f) => ({ ...ref(f), initialOrder: f.initialOrder, grossUnits: f.grossUnits, netUnits: f.netUnits, readerlinkPos: f.readerlinkPos }))
         : null,
       estimates: estimates.get(isbn) ?? [],
+      competitive: [],
     });
   }
   return { titles, missing: wanted.filter((i) => !byIsbn.has(i)) };

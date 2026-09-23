@@ -1,7 +1,7 @@
 "use client";
 
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronsUpDown, ArrowRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRef } from "react";
 import { usePrefetchTitle, type TitleSummaryRow } from "@/lib/queries";
@@ -47,7 +47,7 @@ export function SummaryTable({
         {/* Header */}
         <div
           role="row"
-          className="sticky top-0 z-20 grid border-b border-line bg-surface-2/95 text-xs font-medium text-muted backdrop-blur"
+          className="sticky top-0 z-20 grid border-b border-line-strong bg-surface-2/95 text-[12.5px] font-semibold leading-tight text-ink-2 backdrop-blur"
           style={{ gridTemplateColumns: template }}
         >
           {cols.map((c) => {
@@ -57,16 +57,17 @@ export function SummaryTable({
               <button
                 key={c.key}
                 type="button"
-                title={c.title}
+                title={c.title ?? c.label}
                 onClick={() => onSort(c.key)}
                 className={cn(
-                  "group flex h-10 items-center gap-1 px-3 text-left hover:text-ink",
+                  "group flex h-12 items-center gap-1 px-3 text-left hover:text-ink",
                   c.align === "right" && "justify-end text-right",
                   c.sticky && "sticky left-0 z-10 bg-surface-2",
                   active && "text-ink",
                 )}
               >
-                <span className="truncate">{c.label}</span>
+                {/* Full names wrap onto two lines instead of being cut off (SEG-002). */}
+                <span className="line-clamp-2">{c.label}</span>
                 <Icon className={cn("size-3.5 shrink-0", active ? "text-brand" : "text-subtle opacity-0 group-hover:opacity-100")} />
               </button>
             );
@@ -104,6 +105,9 @@ export function SummaryTable({
                     )}
                   >
                     {c.render(t)}
+                    {c.sticky ? (
+                      <ArrowRight className="ml-auto size-4 shrink-0 text-subtle opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" aria-hidden />
+                    ) : null}
                   </div>
                 ))}
               </div>

@@ -51,7 +51,7 @@ export const SUMMARY_COLUMNS: SummaryColumn[] = [
   },
   {
     key: "laydownEstimate",
-    label: "Laydown est.",
+    label: "Laydown estimate",
     width: 112,
     align: "right",
     value: (t) => t.totals.laydownEstimate,
@@ -59,7 +59,7 @@ export const SUMMARY_COLUMNS: SummaryColumn[] = [
   },
   {
     key: "estimateVsGoal",
-    label: "Goal vs est.",
+    label: "Goal vs estimate",
     title: "Laydown goal minus laydown estimate",
     width: 108,
     align: "right",
@@ -88,8 +88,8 @@ export const SUMMARY_COLUMNS: SummaryColumn[] = [
   { key: "format", label: "Format", width: 128, value: (t) => t.format, render: (t) => <span className="truncate text-ink-2">{t.format}</span> },
   { key: "usPrice", label: "Price", width: 80, align: "right", value: (t) => t.usPrice, render: (t) => <span className="num text-ink-2">{fmtMoney(t.usPrice)}</span> },
   { key: "pubDate", label: "Pub date", width: 90, align: "right", value: (t) => t.pubDate, render: (t) => dateCell(t.pubDate) },
-  { key: "releaseDate", label: "Release", width: 88, align: "right", value: (t) => t.releaseDate, render: (t) => dateCell(t.releaseDate) },
-  { key: "paperCutOff", label: "Cut-off", title: "Paper cut-off date", width: 88, align: "right", value: (t) => t.paperCutOff, render: (t) => dateCell(t.paperCutOff) },
+  { key: "releaseDate", label: "Release date", width: 88, align: "right", value: (t) => t.releaseDate, render: (t) => dateCell(t.releaseDate) },
+  { key: "paperCutOff", label: "Paper cut-off", title: "Paper cut-off date", width: 88, align: "right", value: (t) => t.paperCutOff, render: (t) => dateCell(t.paperCutOff) },
   { key: "ldc", label: "LDC", width: 88, align: "right", value: (t) => t.ldc, render: (t) => dateCell(t.ldc) },
 ];
 

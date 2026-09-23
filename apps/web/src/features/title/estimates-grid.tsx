@@ -1,7 +1,7 @@
 "use client";
 
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { AlertTriangle, ChevronRight, CornerDownRight, MessageSquare } from "lucide-react";
+import { AlertTriangle, ChevronRight, CornerDownRight, MessageSquare, Pencil } from "lucide-react";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -80,6 +80,15 @@ interface Active {
 }
 
 const templateColumns = GRID_COLS.map((c) => `${c.width}px`).join(" ");
+/** Hint shown in an empty editable cell on hover or when selected. */
+const EMPTY_HINT: Record<string, string> = {
+  laydownGoal: "Add goal",
+  laydownEstimate: "Add estimate",
+  sixMonthEstimate: "Add estimate",
+  salesNotes: "Add a note…",
+};
+/** Space kept below the rows for the horizontal scrollbar. */
+const SCROLLBAR_ROOM = 12;
 const gridWidth = GRID_COLS.reduce((s, c) => s + c.width, 0);
 const editableCol = (col: GridCol) => col.kind === "estimate" || col.kind === "notes";
 
@@ -112,20 +121,40 @@ export const EstimatesGrid = forwardRef<EstimatesGridHandle, Props>(function Est
   const [editing, setEditing] = useState<{ draft: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // rows[0] is the "All channels" total, pinned under the header; the rest is virtualized.
   const virtualizer = useVirtualizer({
-    count: rows.length,
+    count: Math.max(0, rows.length - 1),
     getScrollElement: () => scrollRef.current,
     estimateSize: () => ROW_H,
     overscan: 14,
-    scrollPaddingStart: HEADER_H,
+    scrollPaddingStart: HEADER_H + ROW_H,
   });
+  const scrollToRow = (r: number, align: "auto" | "center") => {
+    if (r > 0) virtualizer.scrollToIndex(r - 1, { align });
+  };
+
+  // Scroll state for the frozen-column shadow, the pinned-total shadow and the "more columns" fade.
+  const [scroll, setScroll] = useState({ x: false, y: false, right: false });
+  const readScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const next = { x: el.scrollLeft > 0, y: el.scrollTop > 0, right: el.scrollLeft + el.clientWidth < el.scrollWidth - 1 };
+    setScroll((prev) => (prev.x === next.x && prev.y === next.y && prev.right === next.right ? prev : next));
+  }, []);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => readScroll());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [readScroll]);
 
   useImperativeHandle(ref, () => ({
     focusRow: (key: string) => {
       const idx = rows.findIndex((r) => r.key === key);
       if (idx >= 0) {
         setActive((a) => ({ r: idx, c: a.c }));
-        virtualizer.scrollToIndex(idx, { align: "center" });
+        scrollToRow(idx, "center");
         scrollRef.current?.focus();
       }
     },
@@ -164,7 +193,7 @@ export const EstimatesGrid = forwardRef<EstimatesGridHandle, Props>(function Est
     setActive((a) => {
       const r = Math.min(rows.length - 1, Math.max(0, a.r + dr));
       const c = Math.min(GRID_COLS.length - 1, Math.max(0, a.c + dc));
-      virtualizer.scrollToIndex(r, { align: "auto" });
+      scrollToRow(r, "auto");
       return { r, c };
     });
   };
@@ -291,109 +320,137 @@ export const EstimatesGrid = forwardRef<EstimatesGridHandle, Props>(function Est
 
   const activeRow = rows[active.r];
 
-  return (
-    <div
-      ref={scrollRef}
-      tabIndex={0}
-      role="grid"
-      aria-rowcount={rows.length}
-      aria-colcount={GRID_COLS.length}
-      onKeyDown={onKeyDown}
-      onPaste={onPaste}
-      className="scrollbar-thin relative h-full overflow-auto outline-none"
-    >
-      <div style={{ width: gridWidth, minWidth: "100%" }}>
-        <GridHeader hasComp={grid.hasComp} />
-        <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
-          {virtualizer.getVirtualItems().map((item) => {
-            const row = rows[item.index]!;
-            const isActiveRow = item.index === active.r;
-            return (
-              <div
-                key={row.key}
-                role="row"
-                className={cn(
-                  "group absolute left-0 grid w-full border-b text-[13px]",
-                  row.kind === "total" && "z-[5] border-line-strong bg-surface-2 font-semibold",
-                  row.kind === "channel" && "border-line-strong bg-surface font-medium",
-                  row.kind === "org" && "border-line-strong/80 bg-surface",
-                  row.kind === "account" && "border-line-strong/70 bg-surface-2/40",
-                  highlightKey === row.key && "animate-pulse bg-brand-soft",
-                )}
-                style={{ gridTemplateColumns: templateColumns, height: item.size, transform: `translateY(${item.start}px)` }}
-              >
-                {GRID_COLS.map((col, ci) => {
-                  const isActive = isActiveRow && ci === active.c;
-                  const key = col.field ? (cellId(isbn, row, col.field) ?? "") : "";
-                  const thread = col.kind === "name" ? threadKeyOf(isbn, row) : null;
-                  return (
-                    <Cell
-                      key={col.key}
-                      isbn={isbn}
-                      row={row}
-                      col={col}
-                      hasComp={grid.hasComp}
-                      active={isActive}
-                      editable={isEditable(row, col)}
-                      expanded={expanded.has(row.key)}
-                      onToggle={onToggle}
-                      dirty={key ? dirtyCells.has(key) : false}
-                      saved={key ? savedCells.has(key) : false}
-                      conflict={key ? conflicts.get(key) : undefined}
-                      onResolve={(choice) => onResolve(key, choice)}
-                      remote={key ? remoteCells.get(key) : undefined}
-                      other={key ? othersEditing.get(key) : undefined}
-                      comments={thread ? (commentCounts.get(thread) ?? 0) : 0}
-                      onOpenThread={thread ? () => onOpenThread(thread) : undefined}
-                      nameOf={nameOf}
-                      onMouseDown={() => {
-                        if (editing && !isActive) commit(editing.draft);
-                        setActive({ r: item.index, c: ci });
-                      }}
-                      onDoubleClick={() => {
-                        setActive({ r: item.index, c: ci });
-                        if (isEditable(row, col)) setEditing({ draft: cellValue(row, col) });
-                        else if (col.kind === "name" && row.kind !== "total") onToggle(row.key);
-                      }}
-                    >
-                      {isActive && editing ? (
-                        <input
-                          ref={inputRef}
-                          value={editing.draft}
-                          inputMode={col.kind === "estimate" ? "numeric" : "text"}
-                          onChange={(e) =>
-                            setEditing({ draft: col.kind === "estimate" ? e.target.value.replace(/[^0-9,]/g, "") : e.target.value })
-                          }
-                          onBlur={() => commit(editing.draft)}
-                          onKeyDown={(e) => {
-                            e.stopPropagation();
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              commit(editing.draft, [e.shiftKey ? -1 : 1, 0]);
-                            } else if (e.key === "Tab") {
-                              e.preventDefault();
-                              commit(editing.draft, [0, e.shiftKey ? -1 : 1]);
-                            } else if (e.key === "Escape") {
-                              e.preventDefault();
-                              setEditing(null);
-                              scrollRef.current?.focus();
-                            }
-                          }}
-                          className={cn(
-                            "absolute inset-0 z-10 h-full w-full rounded-[3px] bg-surface px-2.5 text-[13px] text-ink outline-none ring-2 ring-brand",
-                            col.kind === "estimate" && "num text-right",
-                          )}
-                        />
-                      ) : null}
-                    </Cell>
-                  );
-                })}
-              </div>
-            );
-          })}
-        </div>
+  const renderRow = (index: number, layout: { pinned: true } | { start: number; size: number }) => {
+    const row = rows[index]!;
+    const isActiveRow = index === active.r;
+    const pinned = "pinned" in layout;
+    return (
+      <div
+        key={row.key}
+        role="row"
+        aria-rowindex={index + 1}
+        className={cn(
+          "group grid w-full border-b text-[13px]",
+          pinned
+            ? "sticky z-[15] border-b-2 border-line-strong bg-[var(--row-total)] font-semibold transition-shadow"
+            : "absolute left-0",
+          pinned && scroll.y && "shadow-[0_4px_8px_-4px_hsl(var(--shadow-color)/0.25)]",
+          row.kind === "channel" && "border-line-strong bg-surface font-medium",
+          row.kind === "org" && "border-line-strong/80 bg-surface",
+          row.kind === "account" && "border-line-strong/70 bg-[var(--row-account)]",
+          !pinned && "hover:bg-[var(--row-hover)]",
+          !pinned && isActiveRow && "bg-[var(--row-active)] hover:bg-[var(--row-active)]",
+          highlightKey === row.key && "animate-pulse bg-brand-soft",
+        )}
+        style={
+          pinned
+            ? { gridTemplateColumns: templateColumns, height: ROW_H, top: HEADER_H }
+            : { gridTemplateColumns: templateColumns, height: layout.size, transform: `translateY(${layout.start}px)` }
+        }
+      >
+        {GRID_COLS.map((col, ci) => {
+          const isActive = isActiveRow && ci === active.c;
+          const key = col.field ? (cellId(isbn, row, col.field) ?? "") : "";
+          const thread = col.kind === "name" ? threadKeyOf(isbn, row) : null;
+          return (
+            <Cell
+              key={col.key}
+              isbn={isbn}
+              row={row}
+              col={col}
+              hasComp={grid.hasComp}
+              active={isActive}
+              activeRow={isActiveRow}
+              highlighted={highlightKey === row.key}
+              frozenShadow={scroll.x}
+              editable={isEditable(row, col)}
+              expanded={expanded.has(row.key)}
+              onToggle={onToggle}
+              dirty={key ? dirtyCells.has(key) : false}
+              saved={key ? savedCells.has(key) : false}
+              conflict={key ? conflicts.get(key) : undefined}
+              onResolve={(choice) => onResolve(key, choice)}
+              remote={key ? remoteCells.get(key) : undefined}
+              other={key ? othersEditing.get(key) : undefined}
+              comments={thread ? (commentCounts.get(thread) ?? 0) : 0}
+              onOpenThread={thread ? () => onOpenThread(thread) : undefined}
+              nameOf={nameOf}
+              onMouseDown={() => {
+                if (editing && !isActive) commit(editing.draft);
+                setActive({ r: index, c: ci });
+              }}
+              onDoubleClick={() => {
+                setActive({ r: index, c: ci });
+                if (isEditable(row, col)) setEditing({ draft: cellValue(row, col) });
+                else if (col.kind === "name" && row.kind !== "total") onToggle(row.key);
+              }}
+            >
+              {isActive && editing ? (
+                <input
+                  ref={inputRef}
+                  value={editing.draft}
+                  inputMode={col.kind === "estimate" ? "numeric" : "text"}
+                  onChange={(e) => setEditing({ draft: col.kind === "estimate" ? e.target.value.replace(/[^0-9,]/g, "") : e.target.value })}
+                  onBlur={() => commit(editing.draft)}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      commit(editing.draft, [e.shiftKey ? -1 : 1, 0]);
+                    } else if (e.key === "Tab") {
+                      e.preventDefault();
+                      commit(editing.draft, [0, e.shiftKey ? -1 : 1]);
+                    } else if (e.key === "Escape") {
+                      e.preventDefault();
+                      setEditing(null);
+                      scrollRef.current?.focus();
+                    }
+                  }}
+                  className={cn(
+                    "absolute inset-0 z-10 h-full w-full rounded-[3px] bg-surface px-2.5 text-[13px] text-ink outline-none ring-2 ring-info",
+                    col.kind === "estimate" && "num text-right",
+                  )}
+                />
+              ) : null}
+            </Cell>
+          );
+        })}
       </div>
-      {activeRow && activeRow.kind !== "total" ? <span className="sr-only" aria-live="polite">{rowLabel(activeRow)}</span> : null}
+    );
+  };
+
+  // As tall as the rows need (so the horizontal scrollbar sits right under them), up to the screen height.
+  const contentHeight = HEADER_H + rows.length * ROW_H + SCROLLBAR_ROOM;
+
+  return (
+    <div className="relative" style={{ height: `min(${contentHeight}px, calc(100vh - 170px))`, minHeight: Math.min(contentHeight, 240) }}>
+      <div
+        ref={scrollRef}
+        tabIndex={0}
+        role="grid"
+        aria-rowcount={rows.length}
+        aria-colcount={GRID_COLS.length}
+        onKeyDown={onKeyDown}
+        onPaste={onPaste}
+        onScroll={readScroll}
+        className="scrollbar-thin relative h-full overflow-auto outline-none"
+      >
+        <div style={{ width: gridWidth, minWidth: "100%" }}>
+          <GridHeader hasComp={grid.hasComp} frozenShadow={scroll.x} />
+          {rows.length ? renderRow(0, { pinned: true }) : null}
+          <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+            {virtualizer.getVirtualItems().map((item) => renderRow(item.index + 1, { start: item.start, size: item.size }))}
+          </div>
+        </div>
+        {activeRow && activeRow.kind !== "total" ? <span className="sr-only" aria-live="polite">{rowLabel(activeRow)}</span> : null}
+      </div>
+      {/* More columns to the right. */}
+      <div
+        className={cn(
+          "pointer-events-none absolute bottom-3 right-0 top-0 w-10 bg-gradient-to-l from-surface to-transparent transition-opacity",
+          scroll.right ? "opacity-100" : "opacity-0",
+        )}
+      />
     </div>
   );
 });
@@ -411,35 +468,41 @@ function rowLabel(row: GridRow): string {
   return row.node.ref.accountName ?? row.node.ref.accountId ?? "";
 }
 
-function GridHeader({ hasComp }: { hasComp: boolean }) {
+function GridHeader({ hasComp, frozenShadow }: { hasComp: boolean; frozenShadow: boolean }) {
   const firstComp = GRID_COLS.findIndex((c) => c.comp);
   return (
     <div className="sticky top-0 z-20 border-b border-line-strong bg-surface-2/95 backdrop-blur" style={{ height: HEADER_H }}>
       <div className="grid h-[22px] text-[11px] font-medium uppercase tracking-wide text-subtle" style={{ gridTemplateColumns: templateColumns }}>
-        <div className="sticky left-0 bg-surface-2" />
-        <div style={{ gridColumn: `2 / span ${firstComp - 1}` }} className="flex items-end px-3 text-ink-2">
+        <div className={cn("sticky left-0 z-10 border-r border-line-strong bg-surface-2", frozenShadow && FROZEN_SHADOW)} />
+        <div style={{ gridColumn: `2 / span ${firstComp - 1}` }} className="flex items-end border-b-2 border-line-strong px-3 text-ink-2">
           This title
         </div>
-        <div style={{ gridColumn: `${firstComp + 1} / -1` }} className="flex items-end border-l border-line px-3 text-ink-2">
+        <div style={{ gridColumn: `${firstComp + 1} / -1` }} className="flex items-end border-b-2 border-l border-b-info/50 border-l-line-strong bg-info-soft/40 px-3 text-ink-2">
           {hasComp ? "Comparable title" : "Comparable title · none selected"}
         </div>
       </div>
-      <div className="grid h-9 text-xs font-medium text-muted" style={{ gridTemplateColumns: templateColumns }}>
-        {GRID_COLS.map((c, i) => (
-          <div
-            key={c.key}
-            title={c.short}
-            className={cn(
-              "flex items-center border-r border-line-strong/70 px-3",
-              c.kind !== "name" && c.kind !== "notes" && "justify-end text-right",
-              c.kind === "name" && "sticky left-0 z-10 bg-surface-2",
-              i === firstComp && "border-l border-line-strong",
-              c.comp && !hasComp && "text-subtle",
-            )}
-          >
-            {c.label}
-          </div>
-        ))}
+      <div className="grid h-9 text-[12.5px] font-semibold leading-tight text-ink-2" style={{ gridTemplateColumns: templateColumns }}>
+        {GRID_COLS.map((c, i) => {
+          const editable = c.kind === "estimate" || c.kind === "notes";
+          return (
+            <Tooltip key={c.key} content={editable ? "Editable – click a cell to enter a value" : (c.short ?? null)}>
+              <div
+                className={cn(
+                  "flex items-center gap-1 border-r border-line-strong/70 px-3",
+                  c.kind !== "name" && c.kind !== "notes" && "justify-end text-right",
+                  c.kind === "name" && cn("sticky left-0 z-10 border-r-line-strong bg-surface-2", frozenShadow && FROZEN_SHADOW),
+                  editable && "bg-[var(--edit-head)]",
+                  c.comp && "bg-info-soft/40",
+                  i === firstComp && "border-l border-line-strong",
+                  c.comp && !hasComp && "text-subtle",
+                )}
+              >
+                {editable ? <Pencil className="size-3 shrink-0 text-info" aria-hidden /> : null}
+                <span className="line-clamp-2">{c.label}</span>
+              </div>
+            </Tooltip>
+          );
+        })}
       </div>
     </div>
   );
@@ -451,6 +514,9 @@ interface CellProps {
   col: GridCol;
   hasComp: boolean;
   active: boolean;
+  activeRow: boolean;
+  highlighted: boolean;
+  frozenShadow: boolean;
   editable: boolean;
   expanded: boolean;
   dirty: boolean;
@@ -473,6 +539,9 @@ function Cell({
   col,
   hasComp,
   active,
+  activeRow,
+  highlighted,
+  frozenShadow,
   editable,
   expanded,
   dirty,
@@ -490,40 +559,53 @@ function Cell({
   children,
 }: CellProps) {
   const firstComp = col.comp && GRID_COLS.find((c) => c.comp)?.key === col.key;
+  const isName = col.kind === "name";
   const base = cn(
-    "relative flex min-w-0 items-center border-r border-line-strong/70 px-3 transition-[background,box-shadow] duration-300",
-    col.kind === "name" && "sticky left-0 z-[4]",
-    col.kind === "name" && (row.kind === "total" ? "bg-surface-2" : row.kind === "account" ? "bg-[color-mix(in_srgb,var(--surface-2)_40%,var(--surface))]" : "bg-surface"),
+    "group/cell relative flex min-w-0 items-center border-r border-line-strong/70 px-3 transition-[background,box-shadow] duration-300",
+    // Frozen first column: solid background, above every scrolling cell (SEG-001).
+    isName && "sticky left-0 z-[5] border-r-line-strong",
+    isName &&
+      (highlighted
+        ? "bg-brand-soft"
+        : row.kind === "total"
+          ? "bg-[var(--row-total)]"
+          : activeRow
+            ? "bg-[var(--row-active)]"
+            : cn(row.kind === "account" ? "bg-[var(--row-account)]" : "bg-surface", "group-hover:bg-[var(--row-hover)]")),
+    isName && frozenShadow && FROZEN_SHADOW,
     col.kind !== "name" && col.kind !== "notes" && "justify-end",
     firstComp && "border-l border-line",
-    editable && "cursor-cell hover:bg-surface-2/70",
+    editable && "cursor-cell bg-[var(--edit-tint)] hover:bg-[color-mix(in_srgb,var(--info)_9%,transparent)]",
     dirty && "bg-warn-soft/70",
     saved && "bg-ok-soft",
     remote && "bg-info-soft",
     conflict && "bg-warn-soft shadow-[inset_0_0_0_1.5px_var(--warn)]",
-    active && "z-[6] shadow-[inset_0_0_0_2px_var(--brand)]",
+    // Selection is blue; red/amber are kept for problems.
+    active && !isName && "z-[3] shadow-[inset_0_0_0_2px_var(--info)]",
+    active && isName && "shadow-[inset_0_0_0_2px_var(--info)]",
   );
+  const hint = editable && col.field ? EMPTY_HINT[col.field] : undefined;
 
   let content: React.ReactNode = null;
   if (col.kind === "name") content = <NameCell row={row} expanded={expanded} onToggle={onToggle} comments={comments} onOpenThread={onOpenThread} />;
   else if (col.kind === "metric" && col.metric) {
     const v = rowMetrics(row)[col.metric];
     content = (
-      <span className={cn("num", col.comp && !hasComp ? "text-subtle" : row.kind === "account" ? "text-ink-2" : "text-ink", v === 0 && "text-subtle")}>
+      <span className={cn("num", col.comp && !hasComp ? "text-subtle/60" : row.kind === "account" ? "text-ink-2" : "text-ink", v === 0 && "text-subtle")}>
         {col.comp && !hasComp ? "—" : fmtInt(v, "—")}
       </span>
     );
   } else if (col.kind === "estimate" && col.field) {
-    content = <EstimateCell row={row} field={col.field as EstimateNumberField} />;
+    content = <EstimateCell row={row} field={col.field as EstimateNumberField} hint={hint} active={active} />;
   } else if (col.kind === "notes") {
     const notes = rowOwn(row)?.salesNotes ?? "";
     content = notes ? (
       <Tooltip content={notes.length > 38 ? notes : null}>
         <span className="truncate text-ink-2">{notes}</span>
       </Tooltip>
-    ) : editable && active ? (
-      <span className="text-subtle">Add a note…</span>
-    ) : null;
+    ) : (
+      <EmptyValue hint={hint} active={active} />
+    );
   }
 
   const cell = (
@@ -535,6 +617,9 @@ function Cell({
       style={other ? { boxShadow: `inset 0 0 0 2px ${other.color}` } : undefined}
     >
       {conflict ? <AlertTriangle className="mr-auto size-3.5 shrink-0 text-warn" aria-label="Conflict" /> : null}
+      {editable && !conflict ? (
+        <Pencil className="pointer-events-none absolute left-1.5 top-1/2 size-3 -translate-y-1/2 text-info opacity-0 transition-opacity group-hover/cell:opacity-60" aria-hidden />
+      ) : null}
       {remote ? (
         <Tooltip content={`Changed by ${nameOf(remote.by)} · ${clockTime(remote.at)}`}>
           <span className="flex min-w-0 items-center">{content}</span>
@@ -544,7 +629,7 @@ function Cell({
       )}
       {other ? (
         <span
-          className="pointer-events-none absolute -top-px right-0 z-[7] rounded-bl px-1 text-[9px] font-semibold leading-3 text-white"
+          className="pointer-events-none absolute -top-px right-0 z-[2] rounded-bl px-1 text-[9px] font-semibold leading-3 text-white"
           style={{ background: other.color }}
           title={`${other.name} is editing`}
         >
@@ -581,10 +666,30 @@ function Cell({
 
 const fmtCell = (v: number | string | null) => (v === null || v === "" ? "blank" : typeof v === "number" ? fmtInt(v) : `“${v.length > 40 ? v.slice(0, 40) + "…" : v}”`);
 
-function EstimateCell({ row, field }: { row: GridRow; field: EstimateNumberField }) {
+/** Empty cell: a faint dash everywhere; editable cells show what to enter on hover or when selected. */
+function EmptyValue({ hint, active }: { hint?: string; active: boolean }) {
+  if (!hint) return <span className="text-subtle/60">—</span>;
+  return (
+    <>
+      <span className={cn("text-subtle/60 group-hover/cell:hidden", active && "hidden")}>—</span>
+      <span className={cn("hidden text-xs font-normal text-info/80 group-hover/cell:inline", active && "inline")}>{hint}</span>
+    </>
+  );
+}
+
+function EstimateCell({ row, field, hint, active }: { row: GridRow; field: EstimateNumberField; hint?: string; active: boolean }) {
   const own = rowOwn(row)?.[field] ?? null;
   const rolled = rowRolled(row)[field];
-  if (row.kind === "total") return <span className="num">{fmtInt(rolled, "—")}</span>;
+  if (row.kind === "total") {
+    // Re-keyed on change so the total briefly flashes when it moves.
+    return rolled === null ? (
+      <EmptyValue active={false} />
+    ) : (
+      <span key={rolled} className="num -mx-1 animate-flash rounded px-1">
+        {fmtInt(rolled)}
+      </span>
+    );
+  }
   if (own !== null) {
     const sum = childSum(row, field);
     const overrides = sum !== null && sum !== own;
@@ -606,8 +711,10 @@ function EstimateCell({ row, field }: { row: GridRow; field: EstimateNumberField
       </Tooltip>
     );
   }
-  return null;
+  return <EmptyValue hint={hint} active={active} />;
 }
+
+const FROZEN_SHADOW = "shadow-[6px_0_8px_-6px_hsl(var(--shadow-color)/0.3)]";
 
 function NameCell({
   row,

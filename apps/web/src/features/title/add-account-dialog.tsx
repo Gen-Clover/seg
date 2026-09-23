@@ -19,7 +19,7 @@ export function AddAccountDialog({ onPick }: { onPick: (ref: AccountRef) => void
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm">
+        <Button size="sm" variant="primary">
           <Plus />
           Add account
         </Button>

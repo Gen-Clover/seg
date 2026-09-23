@@ -89,3 +89,13 @@ export function facetOptions(titles: TitleSummaryRow[], f: SummaryFilters, key: 
   // Keep relevant options on top; the rest stay available below.
   return [...options.filter((o) => o.count > 0 || f.facets[key].includes(o.value)), ...options.filter((o) => o.count === 0 && !f.facets[key].includes(o.value))];
 }
+
+/** Plain-language description of the active filters, e.g. for report covers. */
+export function describeFilters(f: SummaryFilters): string {
+  const parts = FACETS.filter((facet) => f.facets[facet.key].length).map((facet) => {
+    const values = f.facets[facet.key].map((v) => (facet.key === "pco" || facet.key === "ldc" ? fmtDate(v) : v));
+    return `${facet.label}: ${values.length > 3 ? `${values.slice(0, 3).join(", ")} +${values.length - 3}` : values.join(", ")}`;
+  });
+  if (f.q.trim()) parts.push(`Search: "${f.q.trim()}"`);
+  return parts.length ? parts.join(" · ") : "All titles";
+}

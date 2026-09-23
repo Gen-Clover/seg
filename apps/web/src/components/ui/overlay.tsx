@@ -97,3 +97,39 @@ export function DialogContent({
     </D.Portal>
   );
 }
+
+/* ---------------- Sheet (side panel) ---------------- */
+export function SheetContent({
+  title,
+  description,
+  children,
+  className,
+}: {
+  title: string;
+  description?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <D.Portal>
+      <D.Overlay className="fixed inset-0 z-50 animate-fade-in bg-black/25" />
+      <D.Content
+        className={cn(
+          "fixed inset-y-0 right-0 z-50 flex w-[min(460px,100vw)] animate-slide-in-right flex-col border-l border-line bg-surface shadow-[var(--shadow-pop)] outline-none",
+          className,
+        )}
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
+          <div>
+            <D.Title className="text-[15px] font-semibold text-ink">{title}</D.Title>
+            {description ? <D.Description className="mt-0.5 text-[13px] text-muted">{description}</D.Description> : null}
+          </div>
+          <D.Close className="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-ink" aria-label="Close">
+            <X className="size-4" />
+          </D.Close>
+        </div>
+        {children}
+      </D.Content>
+    </D.Portal>
+  );
+}

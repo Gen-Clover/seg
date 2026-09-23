@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, Download, FileSpreadsheet, Sheet, Upload } from "lucide-react";
+import { ChevronDown, Download, FileSpreadsheet, FileText, Sheet, Upload } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -8,11 +8,12 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/overlay
 import { useMe, type TitleSummaryRow } from "@/lib/queries";
 import { fmtInt } from "@/lib/utils";
 import { UploadDialog } from "../upload/upload-dialog";
+import { downloadMeetingReport } from "../report/meeting-report";
 import { exportAccountDetails, exportSummary } from "./exports";
-import type { SummaryFilters } from "./filters";
+import { describeFilters, type SummaryFilters } from "./filters";
 
 /** Export and upload for the titles currently shown (legacy Export / Upload buttons). */
-export function SummaryActions({ rows, disabled }: { rows: TitleSummaryRow[]; filters: SummaryFilters; disabled?: boolean }) {
+export function SummaryActions({ rows, filters, disabled }: { rows: TitleSummaryRow[]; filters: SummaryFilters; disabled?: boolean }) {
   const me = useMe();
   const canEdit = me.data?.user.role === "admin" || me.data?.user.role === "editor";
   const [menu, setMenu] = useState(false);
@@ -40,6 +41,21 @@ export function SummaryActions({ rows, disabled }: { rows: TitleSummaryRow[]; fi
     } catch (err) {
       console.error(err);
       toast.error("The export failed. Please try again.", { id });
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const runReport = async () => {
+    setMenu(false);
+    setExporting(true);
+    const id = toast.loading(`Preparing the meeting report for ${fmtInt(count)} titles…`);
+    try {
+      const res = await downloadMeetingReport(rows.map((r) => r.isbn), describeFilters(filters), (label) => toast.loading(label, { id }));
+      toast.success(`Meeting report ready · ${fmtInt(res.titles)} titles, ${fmtInt(res.pages)} pages`, { id });
+    } catch (err) {
+      console.error(err);
+      toast.error("The meeting report failed. Please try again.", { id });
     } finally {
       setExporting(false);
     }
@@ -73,6 +89,13 @@ export function SummaryActions({ rows, disabled }: { rows: TitleSummaryRow[]; fi
             onClick={() => runDetails("xlsx")}
           />
           <MenuItem icon={<FileSpreadsheet />} title="Account details (CSV)" hint="Same layout as a .csv file" onClick={() => runDetails("csv")} />
+          <div className="my-1 border-t border-line" />
+          <MenuItem
+            icon={<FileText />}
+            title="Meeting report"
+            hint="PDF · cover with totals, then each title with its comparable title and channels"
+            onClick={runReport}
+          />
         </PopoverContent>
       </Popover>
       <UploadDialog open={uploading} onOpenChange={setUploading} />

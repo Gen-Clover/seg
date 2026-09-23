@@ -39,6 +39,7 @@ import { useWorklist } from "@/lib/worklist";
 import { AddAccountDialog } from "./add-account-dialog";
 import { CompPanel } from "./comp-panel";
 import { EstimatesGrid, type EstimatesGridHandle } from "./estimates-grid";
+import { HistoryPanel } from "./history-panel";
 import { allExpandableKeys, rowLevel, rowRef, type GridRow } from "./grid-model";
 import { useAutosave, type SaveStatus } from "./use-autosave";
 
@@ -293,7 +294,10 @@ function TopBar({ isbn, status, lastSavedAt, canEdit }: { isbn: string; status: 
           </Button>
         </Tooltip>
       </div>
-      <div className="ml-auto">{canEdit ? <SaveIndicator status={status} lastSavedAt={lastSavedAt} /> : <ReadOnlyBadge />}</div>
+      <div className="ml-auto flex items-center gap-3">
+        <HistoryPanel isbn={isbn} />
+        {canEdit ? <SaveIndicator status={status} lastSavedAt={lastSavedAt} /> : <ReadOnlyBadge />}
+      </div>
     </div>
   );
 }

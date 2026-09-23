@@ -326,7 +326,7 @@ export function TitleView({ isbn, user }: { isbn: string; user: Pick<Session, "r
         commentsOn={settings.features.comments}
         onPanel={(tab) => setPanel({ open: true, tab, thread: null })}
       />
-      {block && block.kind !== "viewer" ? <ReadOnlyBanner kind={block.kind} message={block.message} /> : null}
+      {block && block.kind !== "viewer" ? <ReadOnlyBanner kind={block.kind} message={block.message} lockedAt={block.lock?.lockedAt} /> : null}
       {!data || !grid || !totals ? (
         <TitleSkeleton />
       ) : (
@@ -659,7 +659,7 @@ function ReadOnlyBadge({ reason }: { reason: string | null }) {
 }
 
 /** Why this title can't be changed right now (lock, maintenance, access limit). */
-function ReadOnlyBanner({ kind, message }: { kind: "maintenance" | "lock" | "scope"; message: string }) {
+function ReadOnlyBanner({ kind, message, lockedAt }: { kind: "maintenance" | "lock" | "scope"; message: string; lockedAt?: string }) {
   const Icon = kind === "lock" ? Lock : kind === "maintenance" ? Wrench : ShieldAlert;
   const lead = kind === "lock" ? "This title is locked." : kind === "maintenance" ? "Read-only for maintenance." : "View only for you.";
   return (
@@ -667,6 +667,12 @@ function ReadOnlyBanner({ kind, message }: { kind: "maintenance" | "lock" | "sco
       <Icon className="mt-0.5 size-4 shrink-0 text-warn" />
       <p>
         <span className="font-semibold">{lead}</span> {message}
+        {lockedAt ? (
+          <span className="text-muted" suppressHydrationWarning>
+            {" "}
+            · locked {fmtDate(lockedAt)}
+          </span>
+        ) : null}
       </p>
     </div>
   );

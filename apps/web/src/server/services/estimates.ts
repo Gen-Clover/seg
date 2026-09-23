@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { AnyBulkWriteOperation } from "mongodb";
+import { MongoBulkWriteError, type AnyBulkWriteOperation } from "mongodb";
 import { z } from "zod";
 import type { EstimateDoc, EstimateEventDoc } from "@seg/data";
 import {
@@ -27,19 +27,41 @@ const refSchema = z.object({
   accountName: z.string().nullable(),
 });
 
+const cellValueSchema = z.union([z.number(), z.string(), z.null()]);
+
 export const estimateChangeSchema = z.object({
   level: z.enum(["channel", "org", "account"]),
   ref: refSchema,
   field: z.enum(["laydownGoal", "laydownEstimate", "sixMonthEstimate", "salesNotes"]),
-  value: z.union([z.number(), z.string(), z.null()]),
+  value: cellValueSchema,
+  /**
+   * The value the user saw before editing. When given, the change is saved only if the cell
+   * still holds it; otherwise it comes back as a conflict. Omitted = overwrite.
+   */
+  expected: cellValueSchema.optional(),
 });
 export const estimateChangesSchema = z.object({ changes: z.array(estimateChangeSchema).min(1).max(5000) });
 export type EstimateChangeInput = z.infer<typeof estimateChangeSchema>;
+
+type CellValue = number | string | null;
+
+/** A change that was not saved because someone else changed the cell first. */
+export interface CellConflict {
+  estimateId: string;
+  level: Level;
+  ref: AccountRef;
+  field: EstimateField;
+  yours: CellValue;
+  current: CellValue;
+  changedBy: string | null;
+  changedAt: string | null;
+}
 
 export interface ApplyResult {
   estimates: EstimateDoc[];
   totals: TitleTotals;
   changed: number;
+  conflicts: CellConflict[];
 }
 
 interface NormalizedChange {
@@ -47,7 +69,26 @@ interface NormalizedChange {
   level: Level;
   ref: AccountRef;
   field: EstimateField;
-  value: number | string | null;
+  value: CellValue;
+  /** undefined = no check (overwrite). */
+  expected: CellValue | undefined;
+}
+
+const blank = (field: EstimateField): CellValue => (field === "salesNotes" ? "" : null);
+const storedValue = (doc: EstimateDoc | undefined, field: EstimateField): CellValue => (doc ? (doc[field] ?? blank(field)) : blank(field));
+
+/** Mongo filter matching a cell that holds `value` (a blank cell may also be missing). */
+function holds(field: EstimateField, value: CellValue): Record<string, unknown> {
+  if (value === null) return { [field]: null };
+  if (value === "") return { [field]: { $in: ["", null] } };
+  return { [field]: value };
+}
+
+function normalizeValue(field: EstimateField, raw: CellValue): CellValue {
+  if (field === "salesNotes") return raw === null ? "" : String(raw).trim().slice(0, 2000);
+  const parsed = parseEstimateInput(raw);
+  if (parsed === undefined) throw new HttpError(400, `"${String(raw)}" is not a whole number.`);
+  return parsed;
 }
 
 function normalizeChange(isbn: string, c: EstimateChangeInput): NormalizedChange {
@@ -56,21 +97,27 @@ function normalizeChange(isbn: string, c: EstimateChangeInput): NormalizedChange
     throw new HttpError(400, "An organization row needs an organization.");
   }
   if (c.level === "account" && ref.accountId === null) throw new HttpError(400, "An account row needs an account number.");
-  let value: number | string | null;
-  if (c.field === "salesNotes") {
-    value = c.value === null ? "" : String(c.value).trim().slice(0, 2000);
-  } else {
-    const parsed = parseEstimateInput(c.value);
-    if (parsed === undefined) throw new HttpError(400, `"${String(c.value)}" is not a whole number.`);
-    value = parsed;
-  }
-  return { id: estimateId(isbn, c.level, ref), level: c.level, ref, field: c.field, value };
+  return {
+    id: estimateId(isbn, c.level, ref),
+    level: c.level,
+    ref,
+    field: c.field,
+    value: normalizeValue(c.field, c.value),
+    expected: c.expected === undefined ? undefined : normalizeValue(c.field, c.expected),
+  };
 }
+
+const isDuplicateKeyOnly = (err: unknown) =>
+  err instanceof MongoBulkWriteError &&
+  (Array.isArray(err.writeErrors) ? err.writeErrors : [err.writeErrors]).every((e) => e.code === 11000);
 
 /**
  * Applies cell edits for one title.
- * - Field-level upserts: concurrent edits to different cells never overwrite each other.
- * - Every real change is appended to the history log (which is also the BigQuery outbox).
+ * - Field-level writes: concurrent edits to different cells never overwrite each other.
+ * - Per-cell version check: a change carrying `expected` is written only if the cell still
+ *   holds that value (checked inside the write itself, so two simultaneous saves cannot both win).
+ *   Otherwise it is returned as a conflict with who changed the cell and when.
+ * - Every applied change is appended to the history log (which is also the BigQuery outbox).
  * - Title totals are recomputed with the shared roll-up rules.
  */
 export async function applyEstimateChanges(
@@ -83,10 +130,9 @@ export async function applyEstimateChanges(
   const title = await titles.findOne({ _id: isbn }, { projection: { _id: 1, "plan.compIsbn": 1 } });
   if (!title) throw new HttpError(404, `Title ${isbn} was not found.`);
 
-  const changes = input.map((c) => normalizeChange(isbn, c));
   // Last change per cell wins within one request.
   const byCell = new Map<string, NormalizedChange>();
-  for (const c of changes) byCell.set(`${c.id}|${c.field}`, c);
+  for (const c of input.map((x) => normalizeChange(isbn, x))) byCell.set(`${c.id}|${c.field}`, c);
 
   const estimates = await collections.estimates();
   const ids = [...new Set([...byCell.values()].map((c) => c.id))];
@@ -94,25 +140,52 @@ export async function applyEstimateChanges(
 
   const now = new Date().toISOString();
   const ops: AnyBulkWriteOperation<EstimateDoc>[] = [];
-  const events: EstimateEventDoc[] = [];
+  const attempted: { change: NormalizedChange; oldValue: CellValue; guarded: boolean }[] = [];
+  const conflicted: { change: NormalizedChange; current: CellValue }[] = [];
 
   for (const c of byCell.values()) {
     const before = existing.get(c.id);
-    const oldValue = before ? (before[c.field] ?? (c.field === "salesNotes" ? "" : null)) : c.field === "salesNotes" ? "" : null;
+    const oldValue = storedValue(before, c.field);
     if (oldValue === c.value) continue;
-
+    if (c.expected !== undefined && c.expected !== oldValue) {
+      conflicted.push({ change: c, current: oldValue });
+      continue;
+    }
+    const guarded = c.expected !== undefined;
     const defaults: Record<string, unknown> = { ...EMPTY_ESTIMATE };
     delete defaults[c.field];
     ops.push({
       updateOne: {
-        filter: { _id: c.id },
+        filter: guarded ? { _id: c.id, ...holds(c.field, oldValue) } : { _id: c.id },
         update: {
           $set: { [c.field]: c.value, updatedAt: now, updatedBy: user },
           $setOnInsert: { isbn, level: c.level, ...c.ref, ...defaults },
         },
-        upsert: true,
+        // A guarded write to an existing row must not insert a copy when the check fails.
+        upsert: !guarded || !before,
       },
     });
+    attempted.push({ change: c, oldValue, guarded });
+  }
+
+  if (ops.length) {
+    try {
+      await estimates.bulkWrite(ops, { ordered: false });
+    } catch (err) {
+      // A guarded insert raced with another insert of the same row: detected as a conflict below.
+      if (!isDuplicateKeyOnly(err)) throw err;
+    }
+  }
+
+  const after = new Map((await estimates.find({ _id: { $in: ids } }).toArray()).map((d) => [d._id, d]));
+  const events: EstimateEventDoc[] = [];
+  for (const a of attempted) {
+    const current = storedValue(after.get(a.change.id), a.change.field);
+    if (a.guarded && current !== a.change.value) {
+      conflicted.push({ change: a.change, current });
+      continue;
+    }
+    const c = a.change;
     events.push({
       _id: randomUUID(),
       isbn,
@@ -120,7 +193,7 @@ export async function applyEstimateChanges(
       estimateId: c.id,
       ...c.ref,
       field: c.field,
-      oldValue,
+      oldValue: a.oldValue,
       newValue: c.value,
       changedBy: user,
       changedAt: now,
@@ -129,18 +202,53 @@ export async function applyEstimateChanges(
     });
   }
 
-  if (ops.length) {
-    await estimates.bulkWrite(ops, { ordered: false });
+  if (events.length) {
     await (await collections.events()).insertMany(events);
     await titles.updateOne({ _id: isbn }, { $set: { "plan.updatedAt": now, "plan.updatedBy": user } });
     scheduleWriteback();
   }
 
-  const [totals, updated] = await Promise.all([
-    ops.length ? refreshTitleTotals(isbn, title.plan?.compIsbn ?? null) : titles.findOne({ _id: isbn }, { projection: { totals: 1 } }).then((t) => t!.totals),
-    estimates.find({ _id: { $in: ids } }).toArray(),
+  const [totals, conflicts] = await Promise.all([
+    events.length
+      ? refreshTitleTotals(isbn, title.plan?.compIsbn ?? null)
+      : titles.findOne({ _id: isbn }, { projection: { totals: 1 } }).then((t) => t!.totals),
+    describeConflicts(conflicted, after),
   ]);
-  return { estimates: updated, totals, changed: ops.length };
+  return { estimates: [...after.values()], totals, changed: events.length, conflicts };
+}
+
+/** Adds who changed each conflicting cell and when (from the history log). */
+async function describeConflicts(
+  conflicted: { change: NormalizedChange; current: CellValue }[],
+  docs: Map<string, EstimateDoc>,
+): Promise<CellConflict[]> {
+  if (!conflicted.length) return [];
+  const latest = await (await collections.events())
+    .find(
+      { estimateId: { $in: [...new Set(conflicted.map((c) => c.change.id))] } },
+      { projection: { estimateId: 1, field: 1, changedBy: 1, changedAt: 1 } },
+    )
+    .sort({ changedAt: -1 })
+    .toArray();
+  const who = new Map<string, { changedBy: string; changedAt: string }>();
+  for (const e of latest) {
+    const k = `${e.estimateId}|${e.field}`;
+    if (!who.has(k)) who.set(k, { changedBy: e.changedBy, changedAt: e.changedAt });
+  }
+  return conflicted.map(({ change: c, current }) => {
+    const w = who.get(`${c.id}|${c.field}`);
+    const doc = docs.get(c.id);
+    return {
+      estimateId: c.id,
+      level: c.level,
+      ref: c.ref,
+      field: c.field,
+      yours: c.value,
+      current,
+      changedBy: w?.changedBy ?? doc?.updatedBy ?? null,
+      changedAt: w?.changedAt ?? doc?.updatedAt ?? null,
+    };
+  });
 }
 
 export const planChangeSchema = z

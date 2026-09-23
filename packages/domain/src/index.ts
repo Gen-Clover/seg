@@ -7,3 +7,5 @@ export * from "./sheet";
 export * from "./export";
 export * from "./upload";
 export * from "./report";
+export * from "./trends";
+export * from "./desk";

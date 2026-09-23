@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { HttpError, readJson, route } from "@/server/http";
-import { applyEstimateChanges, estimateChangeSchema, type EstimateChangeInput } from "@/server/services/estimates";
+import { applyEstimateChanges, estimateChangeSchema, type CellConflict, type EstimateChangeInput } from "@/server/services/estimates";
 
 export const maxDuration = 60;
 
@@ -11,6 +11,7 @@ const bodySchema = z.object({
 /**
  * Upload endpoint: cell changes across many titles, applied title by title with the same
  * rules, history and write-back as grid edits. One failing title does not block the others.
+ * Changes that carry `expected` are not saved over newer edits; they come back as conflicts.
  */
 export const POST = route(
   async ({ request, session }) => {
@@ -23,16 +24,19 @@ export const POST = route(
     }
 
     let changed = 0;
+    const conflicts: (CellConflict & { isbn: string })[] = [];
     const failed: { isbn: string; error: string }[] = [];
     for (const [isbn, list] of byIsbn) {
       try {
-        changed += (await applyEstimateChanges(isbn, list, session.email, "upload")).changed;
+        const res = await applyEstimateChanges(isbn, list, session.email, "upload");
+        changed += res.changed;
+        conflicts.push(...res.conflicts.map((c) => ({ ...c, isbn })));
       } catch (err) {
         if (!(err instanceof HttpError)) throw err;
         failed.push({ isbn, error: err.message });
       }
     }
-    return { changed, titles: byIsbn.size - failed.length, failed };
+    return { changed, titles: byIsbn.size - failed.length, failed, conflicts };
   },
   { roles: ["admin", "editor"] },
 );

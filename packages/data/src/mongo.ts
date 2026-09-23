@@ -13,9 +13,15 @@ export const COLLECTIONS = {
   // App data (owned by users, written back to BigQuery)
   estimates: "estimates",
   estimateEvents: "estimate_events",
-  // Operational
+  comments: "comments",
+  // Operational (not written to BigQuery; safe to lose on a rebuild)
   users: "users",
   jobRuns: "job_runs",
+  notifications: "notifications",
+  presence: "presence",
+  titleVisits: "title_visits",
+  // Derived (recomputed from estimates and history)
+  trends: "trends",
 } as const;
 
 /** One catalog title. Reference fields come from BigQuery; `plan` and `totals` are app-owned. */
@@ -108,6 +114,72 @@ export interface EstimateEventDoc extends AccountRef {
   syncedAt: string | null;
 }
 
+/**
+ * A comment on a title or one of its rows. Also the outbox for BigQuery: syncedAt is reset
+ * to null on every change so the new version is appended to SEG_COMMENTS.
+ */
+export interface CommentDoc extends AccountRef {
+  _id: string;
+  isbn: string;
+  /** estimateId() of the row, or "<isbn>|title" for the title-level conversation. */
+  threadKey: string;
+  level: Level | "title";
+  body: string;
+  /** E-mails of mentioned users. */
+  mentions: string[];
+  authorEmail: string;
+  authorName: string;
+  createdAt: string;
+  deletedAt: string | null;
+  syncedAt: string | null;
+}
+
+export interface NotificationDoc {
+  _id: string;
+  /** Recipient. */
+  email: string;
+  type: "mention" | "reply";
+  commentId: string;
+  isbn: string;
+  threadKey: string;
+  titleName: string;
+  rowLabel: string;
+  fromEmail: string;
+  fromName: string;
+  excerpt: string;
+  createdAt: string;
+  readAt: string | null;
+}
+
+/** Who is looking at a title right now (heartbeat; expires automatically). */
+export interface PresenceDoc {
+  _id: string; // "<isbn>|<email>"
+  isbn: string;
+  email: string;
+  name: string;
+  /** Cell being edited: "<estimateId>|<field>", or null. */
+  cell: string | null;
+  seenAt: Date;
+}
+
+/** When a user last had a title open (for "changed since your last visit"). */
+export interface TitleVisitDoc {
+  _id: string; // "<email>|<isbn>"
+  email: string;
+  isbn: string;
+  visitedAt: string;
+}
+
+/** Weekly totals per title for the season dashboard. One document, recomputed nightly. */
+export interface TrendsDoc {
+  _id: "weekly";
+  /** Week boundaries (ISO timestamps, oldest first); the last one is the computation time. */
+  points: string[];
+  /** Per ISBN: laydown goal, laydown estimate and 6-month estimate at each point. */
+  series: Record<string, [(number | null)[], (number | null)[], (number | null)[]]>;
+  computedAt: string;
+}
+
 export type Role = "admin" | "editor" | "viewer";
 
 export interface UserDoc {
@@ -130,7 +202,14 @@ export interface JobRunDoc {
   detail: Record<string, unknown>;
 }
 
-type IndexSpec = { key: Record<string, 1 | -1 | "text">; name: string; unique?: boolean };
+type IndexSpec = { key: Record<string, 1 | -1 | "text">; name: string; unique?: boolean; expireAfterSeconds?: number };
+
+/** Options for createIndex() from a spec. */
+export const indexOptions = (idx: IndexSpec) => ({
+  name: idx.name,
+  ...(idx.unique ? { unique: true } : {}),
+  ...(idx.expireAfterSeconds !== undefined ? { expireAfterSeconds: idx.expireAfterSeconds } : {}),
+});
 
 export const INDEXES: Record<string, IndexSpec[]> = {
   [COLLECTIONS.titles]: [
@@ -148,5 +227,18 @@ export const INDEXES: Record<string, IndexSpec[]> = {
   [COLLECTIONS.estimateEvents]: [
     { key: { syncedAt: 1, changedAt: 1 }, name: "outbox" },
     { key: { isbn: 1, changedAt: -1 }, name: "history" },
+    { key: { changedAt: -1 }, name: "recent" },
+  ],
+  [COLLECTIONS.comments]: [
+    { key: { isbn: 1, createdAt: 1 }, name: "title" },
+    { key: { syncedAt: 1 }, name: "outbox" },
+  ],
+  [COLLECTIONS.notifications]: [
+    { key: { email: 1, createdAt: -1 }, name: "inbox" },
+    { key: { email: 1, readAt: 1 }, name: "unread" },
+  ],
+  [COLLECTIONS.presence]: [
+    { key: { isbn: 1, seenAt: -1 }, name: "title" },
+    { key: { seenAt: 1 }, name: "expire", expireAfterSeconds: 60 },
   ],
 };

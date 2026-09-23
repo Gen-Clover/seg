@@ -1,13 +1,10 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
-import { SummaryView } from "@/features/summary/summary-view";
+import { DeskView } from "@/features/desk/desk-view";
+import { currentSession } from "@/server/auth/current";
 
-export const metadata: Metadata = { title: "Summary" };
+export const metadata: Metadata = { title: "My Desk" };
 
-export default function SummaryPage() {
-  return (
-    <Suspense>
-      <SummaryView />
-    </Suspense>
-  );
+export default async function DeskPage() {
+  const session = await currentSession();
+  return <DeskView name={session?.name ?? ""} />;
 }

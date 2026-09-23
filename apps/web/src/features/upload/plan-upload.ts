@@ -156,11 +156,34 @@ async function resolveReferenceAccounts(rows: UploadRow[]): Promise<Map<string, 
 const TITLES_PER_REQUEST = 20;
 const CHANGES_PER_REQUEST = 2500;
 
-/** Saves the previewed changes in batches of whole titles, reporting progress in changes. */
+export interface UploadConflict {
+  isbn: string;
+  level: Level;
+  ref: AccountRef;
+  field: EstimateField;
+  yours: number | string | null;
+  current: number | string | null;
+  changedBy: string | null;
+  changedAt: string | null;
+}
+
+export interface ApplyUploadResult {
+  changed: number;
+  failed: { isbn: string; error: string }[];
+  /** Cells someone else changed after the preview was made: not saved. */
+  conflicts: UploadConflict[];
+}
+
+/**
+ * Saves the previewed changes in batches of whole titles, reporting progress in changes.
+ * Each change carries the value the preview saw, so newer edits by others are never overwritten
+ * unless `overwrite` is set (after the user confirms).
+ */
 export async function applyUpload(
   changes: PreviewChange[],
   onProgress: (done: number, total: number) => void,
-): Promise<{ changed: number; failed: { isbn: string; error: string }[] }> {
+  options: { overwrite?: boolean } = {},
+): Promise<ApplyUploadResult> {
   const sorted = [...changes].sort((a, b) => a.isbn.localeCompare(b.isbn));
   const batches: PreviewChange[][] = [];
   let current: PreviewChange[] = [];
@@ -180,16 +203,27 @@ export async function applyUpload(
   let changed = 0;
   let done = 0;
   const failed: { isbn: string; error: string }[] = [];
+  const conflicts: UploadConflict[] = [];
   onProgress(0, sorted.length);
   for (const batch of batches) {
-    const res = await api<{ changed: number; failed: { isbn: string; error: string }[] }>("/api/estimates/bulk", {
+    const res = await api<ApplyUploadResult>("/api/estimates/bulk", {
       method: "POST",
-      json: { changes: batch.map((c) => ({ isbn: c.isbn, level: c.level, ref: c.ref, field: c.field, value: c.after })) },
+      json: {
+        changes: batch.map((c) => ({
+          isbn: c.isbn,
+          level: c.level,
+          ref: c.ref,
+          field: c.field,
+          value: c.after,
+          ...(options.overwrite ? {} : { expected: c.before }),
+        })),
+      },
     });
     changed += res.changed;
     failed.push(...res.failed);
+    conflicts.push(...res.conflicts);
     done += batch.length;
     onProgress(done, sorted.length);
   }
-  return { changed, failed };
+  return { changed, failed, conflicts };
 }

@@ -1,6 +1,7 @@
 "use client";
 
-import { FilterX, Search, X } from "lucide-react";
+import { BarChart3, FilterX, Search, Table2, X } from "lucide-react";
+import dynamic from "next/dynamic";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,12 @@ import {
 } from "./filters";
 import { SummaryActions } from "./summary-actions";
 import { SummaryTable } from "./summary-table";
+import { useLocalPref } from "@/lib/use-local-pref";
+
+// Loaded only when the dashboard is opened.
+const SummaryDashboard = dynamic(() => import("./dashboard").then((m) => m.SummaryDashboard), {
+  loading: () => <Card className="h-[420px] animate-pulse" />,
+});
 
 export function SummaryView() {
   const summary = useSummary();
@@ -66,9 +73,10 @@ export function SummaryView() {
     update({ ...filters, q: "", facets: Object.fromEntries(FACETS.map((f) => [f.key, []])) as unknown as SummaryFilters["facets"] });
   };
   const active = activeFilterCount(filters);
+  const [view, setView] = useLocalPref("seg-summary-view", "table");
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 p-5 lg:p-6">
+    <div className={cn("flex min-h-0 flex-1 flex-col gap-4 p-5 lg:p-6", view === "dashboard" && "overflow-y-auto")}>
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Summary</h1>
@@ -121,6 +129,24 @@ export function SummaryView() {
         <span className="num ml-auto text-xs text-muted">
           {summary.data ? `${fmtInt(rows.length)} of ${fmtInt(titles.length)}` : ""}
         </span>
+        <div className="flex rounded-lg border border-line bg-surface p-0.5 text-xs" role="tablist" aria-label="View">
+          {([
+            ["table", "Table", Table2],
+            ["dashboard", "Dashboard", BarChart3],
+          ] as const).map(([key, label, Icon]) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={view === key}
+              onClick={() => setView(key)}
+              className={cn("flex items-center gap-1 rounded-md px-2 py-1 font-medium", view === key ? "bg-ink text-surface" : "text-muted hover:text-ink")}
+            >
+              <Icon className="size-3.5" />
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {summary.isPending ? (
@@ -136,7 +162,11 @@ export function SummaryView() {
           <Button className="mt-2" onClick={clearAll}>Clear filters</Button>
         </Card>
       ) : (
-        <SummaryTable rows={rows} sort={filters.sort} dir={filters.dir} onSort={onSort} />
+        view === "dashboard" ? (
+          <SummaryDashboard rows={rows} />
+        ) : (
+          <SummaryTable rows={rows} sort={filters.sort} dir={filters.dir} onSort={onSort} />
+        )
       )}
     </div>
   );

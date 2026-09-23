@@ -12,6 +12,7 @@ import { DEFAULT_DOMAIN_CONFIG, ESTIMATE_FIELDS, estimateId, type EstimateRecord
 import {
   COLLECTIONS,
   INDEXES,
+  indexOptions,
   accountFromRow,
   computeTitleTotals,
   factFromRow,
@@ -130,7 +131,7 @@ async function replace<T extends Document>(name: string, docs: T[]) {
     await col.insertMany(docs.slice(i, i + 5000) as never[], { ordered: false });
   }
   for (const idx of INDEXES[name] ?? []) {
-    await col.createIndex(idx.key, { name: idx.name, ...(idx.unique ? { unique: true } : {}) });
+    await col.createIndex(idx.key, indexOptions(idx));
   }
   console.log(`  ${name.padEnd(22)} ${docs.length.toLocaleString()} docs`);
 }
@@ -148,6 +149,12 @@ const userOps: AnyBulkWriteOperation<UserDoc>[] = userDocs.map((u) => ({
 }));
 await db.collection<UserDoc>(COLLECTIONS.users).bulkWrite(userOps);
 console.log(`  ${COLLECTIONS.users.padEnd(22)} ${userDocs.length} demo users (password from DEMO_PASSWORD)`);
+
+// Collaboration data refers to the old titles: start empty, with indexes in place.
+for (const name of [COLLECTIONS.comments, COLLECTIONS.notifications, COLLECTIONS.presence, COLLECTIONS.titleVisits, COLLECTIONS.trends]) {
+  await db.collection(name).drop().catch(() => undefined);
+  for (const idx of INDEXES[name] ?? []) await db.collection(name).createIndex(idx.key, indexOptions(idx));
+}
 
 await db.collection(COLLECTIONS.jobRuns).insertOne({
   _id: `seed-${now}` as never,

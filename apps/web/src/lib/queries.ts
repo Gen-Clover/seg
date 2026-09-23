@@ -1,12 +1,16 @@
 "use client";
 
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useMemo } from "react";
 import type { AccountRef } from "@seg/domain";
 import type { Session } from "@/server/auth/session";
+import type { CommentView, NotificationView } from "@/server/services/comments";
+import type { ChangedTitle } from "@/server/services/desk";
 import type { TitleDetail, TitleSearchHit, TitleSummaryRow } from "@/server/services/titles";
+import type { TrendsView } from "@/server/services/trends";
 import { api } from "./api";
 
-export type { TitleDetail, TitleSearchHit, TitleSummaryRow };
+export type { ChangedTitle, CommentView, NotificationView, TitleDetail, TitleSearchHit, TitleSummaryRow, TrendsView };
 
 export const queryKeys = {
   me: ["me"] as const,
@@ -15,6 +19,11 @@ export const queryKeys = {
   search: (q: string) => ["search", q] as const,
   accounts: (q: string) => ["accounts", q] as const,
   history: (isbn: string, estimateId?: string) => ["history", isbn, estimateId ?? ""] as const,
+  comments: (isbn: string) => ["comments", isbn] as const,
+  unread: ["notifications", "unread"] as const,
+  notifications: ["notifications", "list"] as const,
+  desk: ["desk"] as const,
+  trends: ["trends"] as const,
 };
 
 export function useMe() {
@@ -69,4 +78,80 @@ export function useAccountSearch(q: string, enabled: boolean) {
     staleTime: 5 * 60_000,
     placeholderData: keepPreviousData,
   });
+}
+
+/* ---------- Collaboration ---------- */
+
+export interface Person {
+  email: string;
+  name: string;
+  role: string;
+}
+
+export function useUsers(enabled = true) {
+  return useQuery({
+    queryKey: ["users"] as const,
+    queryFn: () => api<{ users: Person[] }>("/api/users"),
+    enabled,
+    staleTime: 10 * 60_000,
+  });
+}
+
+export function useComments(isbn: string) {
+  return useQuery({
+    queryKey: queryKeys.comments(isbn),
+    queryFn: () => api<{ comments: CommentView[] }>(`/api/titles/${encodeURIComponent(isbn)}/comments`),
+    staleTime: 30_000,
+  });
+}
+
+/** Unread mentions/replies badge: cheap count, refreshed every 30 s while the tab is visible. */
+export function useUnreadCount() {
+  return useQuery({
+    queryKey: queryKeys.unread,
+    queryFn: () => api<{ unread: number }>("/api/notifications?count=1"),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: "always",
+    staleTime: 5_000,
+  });
+}
+
+export function useNotifications(enabled: boolean) {
+  const qc = useQueryClient();
+  return useQuery({
+    queryKey: queryKeys.notifications,
+    queryFn: async () => {
+      const res = await api<{ items: NotificationView[]; unread: number }>("/api/notifications");
+      // Keep the badge in step with the list.
+      qc.setQueryData(queryKeys.unread, { unread: res.unread });
+      return res;
+    },
+    enabled,
+    staleTime: 10_000,
+  });
+}
+
+export function useDesk() {
+  return useQuery({
+    queryKey: queryKeys.desk,
+    queryFn: () => api<{ changed: ChangedTitle[] }>("/api/desk"),
+    staleTime: 30_000,
+  });
+}
+
+export function useTrends(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.trends,
+    queryFn: () => api<TrendsView>("/api/trends"),
+    enabled,
+    staleTime: 10 * 60_000,
+  });
+}
+
+/** Display name for an e-mail (from the team list), falling back to the e-mail's first part. */
+export function usePersonName() {
+  const users = useUsers();
+  const names = useMemo(() => new Map((users.data?.users ?? []).map((u) => [u.email, u.name])), [users.data]);
+  return useCallback((email: string | null | undefined) => (email ? (names.get(email) ?? email.split("@")[0]!) : "Someone"), [names]);
 }

@@ -49,7 +49,12 @@ MongoDB is therefore a disposable working store: it can be rebuilt from BigQuery
 | `accounts` | ingestion | Valid combinations for "Add account" and upload validation |
 | `estimates` | app | One doc per title × level × combination; `_id` = `estimateId()` |
 | `estimate_events` | app | Append-only history + BigQuery outbox |
+| `comments` | app | Comments on a title or a row (`threadKey` = the row's `estimateId`, or `<isbn>|title`). Also the outbox for `SEG_COMMENTS` |
 | `users` | app | Demo credentials; production uses Entra ID but keeps roles here |
+| `notifications` | app (operational) | @mentions and replies per person; not written to BigQuery |
+| `presence` | app (operational) | Who has a title open; heartbeat every 5 s, TTL-expired |
+| `title_visits` | app (operational) | When each person last opened each title ("changed since your last visit") |
+| `trends` | derived | Weekly goal / estimate / 6-month totals per title for the dashboard; recomputed nightly |
 | `job_runs` | jobs | Ingestion / write-back / seed runs |
 
 ## Business rules (packages/domain)
@@ -64,6 +69,9 @@ MongoDB is therefore a disposable working store: it can be rebuilt from BigQuery
 | Estimates are whole, non-negative numbers | `numbers.ts` |
 | Upload: totals rows → channel, "All Accounts" → organization, blanks keep values | `upload.ts` |
 | Export layout (re-uploadable) | `export.ts` |
+| Meeting report rows (channel rows, combined notes) | `report.ts` |
+| My Desk lists: due soon, below goal, no comparable | `desk.ts` |
+| Past weekly totals, rebuilt from history with the same roll-up | `trends.ts` |
 
 ### Deliberate differences from the legacy app
 
@@ -86,6 +94,15 @@ MongoDB is therefore a disposable working store: it can be rebuilt from BigQuery
 | Navigation | Next/previous titles and hovered summary rows are prefetched |
 | Saves | Batched after 600 ms; only changed cells are sent; failures retry without losing input |
 | Server | One pooled Mongo connection per process; no per-request BigQuery calls |
+
+## Collaboration
+
+| Feature | How |
+|---|---|
+| **Conflicts** | Every save carries the value the user saw (`expected`). The server writes a cell only if it still holds that value — checked inside the write itself — otherwise it returns a conflict (who / when / their value) and the user chooses *Keep mine* or *Use theirs*. Uploads work the same way, with an "overwrite these cells" option. |
+| **Live teamwork** | While a title is open and visible, the browser calls `POST /api/titles/:isbn/live` every 5 s: it records presence (and the cell being edited), records the visit, and returns other viewers plus everything others saved since the last call (read from the history log). Polling needs no extra service and works on serverless hosting; on dedicated servers it can be swapped for WebSockets. |
+| **Undo / redo / restore** | Undo replays earlier values as normal edits, so they autosave, show in history and are conflict-checked. History entries can be restored the same way. |
+| **Comments** | Title and row threads with @mentions; notifications for mentions and replies. Comments are written back to `SEG_COMMENTS` (append-only versions) and restored by the ingestion job into an empty database. |
 
 ## Security
 

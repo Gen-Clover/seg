@@ -65,6 +65,15 @@ npm run typecheck # all workspaces
 npm run lint
 ```
 
+## Features
+
+- **My Desk** (home): titles due soon without estimates, below goal, without a comparable title,
+  changed by others since your last visit, and your @mentions.
+- **Summary**: filterable catalog with a **Dashboard** view (goal vs estimate by season / division /
+  imprint / format, coverage, week-by-week trend), exports, upload with preview, meeting report PDF.
+- **Title workspace**: spreadsheet-style grid with autosave, conflict handling, undo / redo,
+  live updates and presence, comments on the title or any row, and full change history with restore.
+
 ## Branches and environments
 
 | Branch | Vercel environment | MongoDB database | Writes to BigQuery |

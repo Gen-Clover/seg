@@ -12,36 +12,68 @@ import {
   CloudOff,
   Copy,
   Eye,
+  History,
+  MessageSquare,
+  Redo2,
   Search,
+  Undo2,
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   accountKey,
   buildTitleGrid,
+  estimateId,
   isAccountLevelChannel,
+  refForLevel,
   titleTotals,
   type AccountFact,
   type AccountRef,
   type EstimateField,
   type EstimateRecord,
+  type Level,
 } from "@seg/domain";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, Input, Kbd, Skeleton, Spinner, Textarea } from "@/components/ui/misc";
 import { Tooltip } from "@/components/ui/overlay";
 import { api } from "@/lib/api";
-import { queryKeys, usePrefetchTitle, useSummary, useTitle, type TitleDetail } from "@/lib/queries";
+import { initials, personColor } from "@/lib/people";
+import { queryKeys, useComments, useMe, usePrefetchTitle, useSummary, useTitle, type TitleDetail } from "@/lib/queries";
+import type { Viewer } from "@/server/services/live";
 import { cn, fmtDate, fmtInt, fmtMoney, fmtSigned, timeAgo } from "@/lib/utils";
 import { useWorklist } from "@/lib/worklist";
 import { AddAccountDialog } from "./add-account-dialog";
 import { CompPanel } from "./comp-panel";
 import { EstimatesGrid, type EstimatesGridHandle } from "./estimates-grid";
-import { HistoryPanel } from "./history-panel";
+import { ActivityPanel, type HistoryItem, type PanelTab } from "./activity-panel";
+import { rowKeysOfThread, threadTarget, type ThreadTarget } from "./comments";
 import { allExpandableKeys, rowLevel, rowRef, type GridRow } from "./grid-model";
 import { useAutosave, type SaveStatus } from "./use-autosave";
+import { useLive } from "./use-live";
+import { useUndo, type UndoCell } from "./use-undo";
+
+type CellValue = number | string | null;
+const ESTIMATE_FIELDS = new Set(["laydownGoal", "laydownEstimate", "sixMonthEstimate", "salesNotes"]);
+const blankOf = (field: EstimateField): CellValue => (field === "salesNotes" ? "" : null);
+const refOfItem = (e: HistoryItem): AccountRef => ({
+  channelId: e.channelId,
+  channelName: e.channelName,
+  orgId: e.orgId,
+  orgName: e.orgName,
+  accountId: e.accountId,
+  accountName: e.accountName,
+});
+const FIELD_NAME: Record<string, string> = {
+  laydownGoal: "Laydown goal",
+  laydownEstimate: "Laydown estimate",
+  sixMonthEstimate: "6-month estimate",
+  salesNotes: "Sales notes",
+  compIsbn: "Comparable title",
+  titleNotes: "Title notes",
+};
 
 export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean }) {
   const detail = useTitle(isbn);
@@ -52,15 +84,106 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
   const [filter, setFilter] = useState("");
   const [draftAccounts, setDraftAccounts] = useState<AccountRef[]>([]);
   const [highlight, setHighlight] = useState<string | null>(null);
+  const me = useMe().data?.user ?? null;
+  const [editingCell, setEditingCell] = useState<string | null>(null);
+  const live = useLive(isbn, editingCell);
+  const comments = useComments(isbn);
+  const [panel, setPanel] = useState<{ open: boolean; tab: PanelTab; thread: ThreadTarget | null }>({ open: false, tab: "comments", thread: null });
+  const [focusKey, setFocusKey] = useState<string | null>(null);
+
+  // Link from a notification (?thread=<key>): open that conversation and bring its row into view.
+  const threadParam = useSearchParams().get("thread");
+  const [seenThreadParam, setSeenThreadParam] = useState<string | null>(null);
+  if (threadParam !== seenThreadParam) {
+    setSeenThreadParam(threadParam);
+    if (threadParam) {
+      const target = threadTarget(isbn, threadParam);
+      setPanel({ open: true, tab: "comments", thread: target });
+      if (target.level !== "title") {
+        const keys = rowKeysOfThread(threadParam);
+        setExpanded((prev) => new Set([...prev, ...keys.parents]));
+        setFocusKey(keys.row);
+      }
+    }
+  }
 
   const data = detail.data;
+  const { applyEdits, edit } = autosave;
+  const estimates = useMemo(() => (data ? applyEdits(data.estimates as EstimateRecord[]) : []), [data, applyEdits]);
   const grid = useMemo(() => {
     if (!data) return null;
-    const estimates = autosave.applyEdits(data.estimates as EstimateRecord[]);
     const drafts: AccountFact[] = draftAccounts.map((r) => ({ ...r, initialOrder: 0 }));
     return buildTitleGrid({ facts: [...data.facts, ...drafts], compFacts: data.compFacts, estimates });
-  }, [data, autosave, draftAccounts]);
+  }, [data, estimates, draftAccounts]);
   const totals = useMemo(() => (grid ? titleTotals(grid) : null), [grid]);
+
+  const focusedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusKey || !grid || focusedRef.current === focusKey) return;
+    const t = setTimeout(() => {
+      focusedRef.current = focusKey;
+      gridRef.current?.focusRow(focusKey);
+    }, 60);
+    return () => clearTimeout(t);
+  }, [focusKey, grid]);
+
+  /** A cell's own value as shown (saved value plus unsent local edits). */
+  const byId = useMemo(() => new Map(estimates.map((e) => [estimateId(e.isbn, e.level, e), e])), [estimates]);
+  const currentOwn = useCallback(
+    (level: Level, ref: AccountRef, field: EstimateField): CellValue => {
+      const rec = byId.get(estimateId(isbn, level, refForLevel(level, ref)));
+      return rec ? (rec[field] ?? blankOf(field)) : blankOf(field);
+    },
+    [byId, isbn],
+  );
+
+  // Undo / redo: every grid edit is recorded; undoing replays earlier values as normal edits.
+  const replay = useCallback((cell: UndoCell, value: CellValue) => edit(cell.level, cell.ref, cell.field, value), [edit]);
+  const { record, undo, redo, canUndo, canRedo } = useUndo(replay);
+  const change = useCallback(
+    (level: Level, ref: AccountRef, field: EstimateField, value: CellValue) => {
+      const r = refForLevel(level, ref);
+      record({ level, ref: r, field, before: currentOwn(level, r, field), after: value });
+      edit(level, r, field, value);
+    },
+    [record, edit, currentOwn],
+  );
+  const runUndo = useCallback(
+    (kind: "undo" | "redo") => {
+      const n = kind === "undo" ? undo() : redo();
+      if (n) toast(`${kind === "undo" ? "Undid" : "Redid"} ${n} change${n === 1 ? "" : "s"}`, { id: "undo" });
+    },
+    [undo, redo],
+  );
+  useEffect(() => {
+    if (!canEdit) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const key = e.key.toLowerCase();
+      const isUndo = key === "z" && !e.shiftKey;
+      const isRedo = key === "y" || (key === "z" && e.shiftKey);
+      if (!isUndo && !isRedo) return;
+      // Typing fields and dialogs keep their own undo.
+      const t = e.target as HTMLElement | null;
+      if (t?.closest("input, textarea, select, [contenteditable='true'], [role='dialog']")) return;
+      e.preventDefault();
+      runUndo(isUndo ? "undo" : "redo");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [canEdit, runUndo]);
+
+  const commentCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of comments.data?.comments ?? []) m.set(c.threadKey, (m.get(c.threadKey) ?? 0) + 1);
+    return m;
+  }, [comments.data]);
+  const othersEditing = useMemo(() => {
+    const m = new Map<string, { name: string; initials: string; color: string }>();
+    for (const v of live.viewers) if (v.cell) m.set(v.cell, { name: v.name, initials: initials(v.name, v.email), color: personColor(v.email) });
+    return m;
+  }, [live.viewers]);
+  const openThread = useCallback((key: string) => setPanel({ open: true, tab: "comments", thread: threadTarget(isbn, key) }), [isbn]);
 
   const plan = useMutation({
     mutationFn: (change: { compIsbn?: string | null; titleNotes?: string }) =>
@@ -80,10 +203,43 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
     (row: GridRow, field: EstimateField, value: number | string | null) => {
       const level = rowLevel(row);
       const ref = rowRef(row);
-      if (level && ref) autosave.edit(level, ref, field, value);
+      if (level && ref) change(level, ref, field, value);
     },
-    [autosave],
+    [change],
   );
+
+  /** What a history entry's cell holds now (undefined = not restorable). */
+  const currentValue = (item: HistoryItem): CellValue | undefined => {
+    if (!data) return undefined;
+    if (item.level === "title") {
+      if (item.field === "compIsbn") return data.title.plan.compIsbn;
+      if (item.field === "titleNotes") return data.title.plan.titleNotes;
+      return undefined;
+    }
+    if (!ESTIMATE_FIELDS.has(item.field)) return undefined;
+    return currentOwn(item.level, refOfItem(item), item.field as EstimateField);
+  };
+  const restore = (item: HistoryItem) => {
+    if (item.level === "title") {
+      if (item.field === "compIsbn") plan.mutate({ compIsbn: item.oldValue === null ? null : String(item.oldValue) });
+      else plan.mutate({ titleNotes: String(item.oldValue ?? "") });
+    } else {
+      change(item.level, refOfItem(item), item.field as EstimateField, item.oldValue);
+    }
+    toast.success(`${FIELD_NAME[item.field] ?? item.field} restored to ${item.oldValue === null || item.oldValue === "" ? "blank" : typeof item.oldValue === "number" ? fmtInt(item.oldValue) : item.oldValue}`);
+  };
+  const showRow = (t: ThreadTarget) => {
+    if (t.level === "title") return;
+    setPanel((prev) => ({ ...prev, open: false }));
+    const keys = rowKeysOfThread(t.threadKey);
+    setExpanded((prev) => new Set([...prev, ...keys.parents]));
+    setFilter("");
+    setTimeout(() => {
+      gridRef.current?.focusRow(keys.row);
+      setHighlight(keys.row);
+      setTimeout(() => setHighlight(null), 1600);
+    }, 80);
+  };
 
   const toggle = useCallback((key: string) => {
     setExpanded((s) => {
@@ -132,7 +288,7 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
           <AlertCircle className="mx-auto size-8 text-brand" />
           <p className="mt-3 font-medium">{detail.error instanceof Error ? detail.error.message : "This title could not be loaded."}</p>
           <Button asChild className="mt-4">
-            <Link href="/">Back to summary</Link>
+            <Link href="/summary">Back to summary</Link>
           </Button>
         </Card>
       </div>
@@ -141,7 +297,15 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <TopBar isbn={isbn} status={autosave.status} lastSavedAt={autosave.lastSavedAt} canEdit={canEdit} />
+      <TopBar
+        isbn={isbn}
+        status={autosave.status}
+        lastSavedAt={autosave.lastSavedAt}
+        canEdit={canEdit}
+        viewers={live.viewers}
+        commentCount={comments.data?.comments.length ?? 0}
+        onPanel={(tab) => setPanel({ open: true, tab, thread: null })}
+      />
       {!data || !grid || !totals ? (
         <TitleSkeleton />
       ) : (
@@ -177,6 +341,20 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
                 <ChevronsDownUp />
                 Collapse all
               </Button>
+              {canEdit ? (
+                <div className="flex items-center gap-0.5 border-l border-line pl-2">
+                  <Tooltip content="Undo (Ctrl Z)">
+                    <Button size="icon-sm" variant="ghost" disabled={!canUndo} onClick={() => runUndo("undo")} aria-label="Undo">
+                      <Undo2 />
+                    </Button>
+                  </Tooltip>
+                  <Tooltip content="Redo (Ctrl Y)">
+                    <Button size="icon-sm" variant="ghost" disabled={!canRedo} onClick={() => runUndo("redo")} aria-label="Redo">
+                      <Redo2 />
+                    </Button>
+                  </Tooltip>
+                </div>
+              ) : null}
               <div className="ml-auto flex items-center gap-3">
                 <Legend />
                 {canEdit ? <AddAccountDialog onPick={addAccount} /> : null}
@@ -195,11 +373,32 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
                 savedCells={autosave.savedCells}
                 onEdit={onEdit}
                 highlightKey={highlight}
+                conflicts={autosave.conflicts}
+                onResolve={autosave.resolve}
+                remoteCells={live.remoteCells}
+                othersEditing={othersEditing}
+                commentCounts={commentCounts}
+                onOpenThread={openThread}
+                onEditingChange={setEditingCell}
               />
             </div>
           </Card>
         </div>
       )}
+      <ActivityPanel
+        isbn={isbn}
+        open={panel.open}
+        onOpenChange={(open) => setPanel((prev) => ({ ...prev, open }))}
+        tab={panel.tab}
+        onTab={(tab) => setPanel((prev) => ({ ...prev, tab }))}
+        thread={panel.thread}
+        onThread={(thread) => setPanel((prev) => ({ ...prev, thread }))}
+        onShowRow={showRow}
+        me={{ email: me?.email ?? "", role: me?.role ?? "viewer" }}
+        canEdit={canEdit}
+        currentValue={currentValue}
+        onRestore={restore}
+      />
     </div>
   );
 }
@@ -220,7 +419,23 @@ function Legend() {
   );
 }
 
-function TopBar({ isbn, status, lastSavedAt, canEdit }: { isbn: string; status: SaveStatus; lastSavedAt: number | null; canEdit: boolean }) {
+function TopBar({
+  isbn,
+  status,
+  lastSavedAt,
+  canEdit,
+  viewers,
+  commentCount,
+  onPanel,
+}: {
+  isbn: string;
+  status: SaveStatus;
+  lastSavedAt: number | null;
+  canEdit: boolean;
+  viewers: Viewer[];
+  commentCount: number;
+  onPanel: (tab: PanelTab) => void;
+}) {
   const router = useRouter();
   const worklist = useWorklist();
   const summary = useSummary();
@@ -229,7 +444,7 @@ function TopBar({ isbn, status, lastSavedAt, canEdit }: { isbn: string; status: 
   const list = useMemo(() => {
     if (worklist?.isbns.includes(isbn)) return worklist;
     const all = [...(summary.data?.titles ?? [])].sort((a, b) => (a.pubDate ?? "").localeCompare(b.pubDate ?? "") || a.isbn.localeCompare(b.isbn));
-    return { isbns: all.map((t) => t.isbn), label: "All titles", href: "/" };
+    return { isbns: all.map((t) => t.isbn), label: "All titles", href: "/summary" };
   }, [worklist, isbn, summary.data]);
 
   const idx = list.isbns.indexOf(isbn);
@@ -294,10 +509,47 @@ function TopBar({ isbn, status, lastSavedAt, canEdit }: { isbn: string; status: 
           </Button>
         </Tooltip>
       </div>
-      <div className="ml-auto flex items-center gap-3">
-        <HistoryPanel isbn={isbn} />
+      <div className="ml-auto flex items-center gap-2">
+        <Presence viewers={viewers} />
+        <Button variant="ghost" size="sm" onClick={() => onPanel("comments")}>
+          <MessageSquare />
+          Comments
+          {commentCount ? <span className="num rounded-full bg-info-soft px-1.5 text-[11px] font-semibold text-info">{commentCount}</span> : null}
+        </Button>
+        <Button variant="ghost" size="sm" onClick={() => onPanel("history")}>
+          <History />
+          History
+        </Button>
+        <span className="mx-1 h-5 w-px bg-line" />
         {canEdit ? <SaveIndicator status={status} lastSavedAt={lastSavedAt} /> : <ReadOnlyBadge />}
       </div>
+    </div>
+  );
+}
+
+/** Who else has this title open right now (initials avatars; editing shown in the tooltip). */
+function Presence({ viewers }: { viewers: Viewer[] }) {
+  if (!viewers.length) return null;
+  const shown = viewers.slice(0, 4);
+  return (
+    <div className="mr-1 flex items-center">
+      <div className="flex -space-x-1.5">
+        {shown.map((v) => (
+          <Tooltip key={v.email} content={`${v.name} ${v.cell ? "is editing a cell" : "is viewing this title"}`}>
+            <span
+              className={cn(
+                "relative flex size-7 items-center justify-center rounded-full text-[11px] font-semibold text-white ring-2 ring-canvas",
+                v.cell && "outline outline-2 outline-offset-1",
+              )}
+              style={{ background: personColor(v.email), outlineColor: personColor(v.email) }}
+            >
+              {initials(v.name, v.email)}
+              <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full bg-ok ring-2 ring-canvas" />
+            </span>
+          </Tooltip>
+        ))}
+      </div>
+      {viewers.length > shown.length ? <span className="num ml-1.5 text-xs text-muted">+{viewers.length - shown.length}</span> : null}
     </div>
   );
 }

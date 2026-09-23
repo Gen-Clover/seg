@@ -138,6 +138,32 @@ export const ESTIMATE_EVENTS_SCHEMA: BqField[] = [
   { name: "source", type: "STRING" },
 ];
 
+/**
+ * Comments on titles and rows. Append-only: every change (post, delete) appends the comment's
+ * new version; the latest row per comment_id is the current state.
+ */
+export const COMMENTS_TABLE = "SEG_COMMENTS";
+export const COMMENTS_SCHEMA: BqField[] = [
+  { name: "comment_id", type: "STRING", mode: "REQUIRED" },
+  { name: "version_at", type: "TIMESTAMP", mode: "REQUIRED" },
+  { name: "isbn", type: "STRING", mode: "REQUIRED" },
+  { name: "thread_key", type: "STRING", mode: "REQUIRED" },
+  { name: "level", type: "STRING", mode: "REQUIRED" },
+  { name: "distribution_channel", type: "STRING" },
+  { name: "distribution_channel_name", type: "STRING" },
+  { name: "organization_id", type: "STRING" },
+  { name: "organization_name", type: "STRING" },
+  { name: "account_number", type: "STRING" },
+  { name: "account_name", type: "STRING" },
+  { name: "body", type: "STRING" },
+  /** Comma-separated e-mails of mentioned users. */
+  { name: "mentions", type: "STRING" },
+  { name: "author_email", type: "STRING" },
+  { name: "author_name", type: "STRING" },
+  { name: "created_at", type: "TIMESTAMP", mode: "REQUIRED" },
+  { name: "deleted_at", type: "TIMESTAMP" },
+];
+
 /** Precomputed outputs of the ingestion SQL (in the app dataset). */
 export const FACTS_TABLE = "SEG_TITLE_ACCOUNT_FACTS";
 export const STATS_TABLE = "SEG_TITLE_STATS";
@@ -388,5 +414,20 @@ SELECT
   ARRAY_AGG(changed_by ORDER BY changed_at DESC LIMIT 1)[OFFSET(0)] AS updated_by
 FROM LATEST
 GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
+`;
+}
+
+/** Schema object for creating a table with the BigQuery client. */
+export const tableSchema = (fields: BqField[]) => ({
+  fields: fields.map((f) => ({ name: f.name, type: f.type, mode: f.mode ?? "NULLABLE" })),
+});
+
+/** Latest version of every comment (for restoring MongoDB from BigQuery). */
+export function buildCurrentCommentsSql(cfg: BigQueryConfig): string {
+  return `
+SELECT * EXCEPT (rn) FROM (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY comment_id ORDER BY version_at DESC) AS rn
+  FROM ${q(cfg, "app", COMMENTS_TABLE)}
+) WHERE rn = 1
 `;
 }

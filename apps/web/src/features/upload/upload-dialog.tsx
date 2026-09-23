@@ -11,14 +11,14 @@ import { Dialog, DialogContent } from "@/components/ui/overlay";
 import { queryKeys } from "@/lib/queries";
 import { downloadCsv } from "@/lib/sheets";
 import { cn, fmtInt } from "@/lib/utils";
-import { applyUpload, previewUpload, type PreviewChange, type Stage, type UploadPreview } from "./plan-upload";
+import { applyUpload, previewUpload, type PreviewChange, type Stage, type UploadConflict, type UploadPreview } from "./plan-upload";
 
 type State =
   | { step: "pick"; error?: string }
   | { step: "working"; stage: Stage; fileName: string }
   | { step: "preview"; preview: UploadPreview }
   | { step: "saving"; preview: UploadPreview; done: number; total: number }
-  | { step: "done"; preview: UploadPreview; changed: number; failed: { isbn: string; error: string }[] };
+  | { step: "done"; preview: UploadPreview; changed: number; failed: { isbn: string; error: string }[]; conflicts: UploadConflict[] };
 
 const FIELD_LABEL: Record<EstimateField, string> = {
   laydownGoal: "Laydown goal",
@@ -57,14 +57,20 @@ export function UploadDialog({ open, onOpenChange }: { open: boolean; onOpenChan
     }
   };
 
-  const save = async (preview: UploadPreview) => {
-    setState({ step: "saving", preview, done: 0, total: preview.changes.length });
+  /** Saves changes; `overwrite` re-sends conflicting cells without the version check (user confirmed). */
+  const save = async (preview: UploadPreview, changes = preview.changes, overwrite = false, savedBefore = 0) => {
+    setState({ step: "saving", preview, done: 0, total: changes.length });
     try {
-      const res = await applyUpload(preview.changes, (done, total) => setState({ step: "saving", preview, done, total }));
-      setState({ step: "done", preview, changed: res.changed, failed: res.failed });
+      const res = await applyUpload(changes, (done, total) => setState({ step: "saving", preview, done, total }), { overwrite });
+      const changed = savedBefore + res.changed;
+      setState({ step: "done", preview, changed, failed: res.failed, conflicts: res.conflicts });
       await qc.invalidateQueries({ queryKey: queryKeys.summary });
-      for (const isbn of new Set(preview.changes.map((c) => c.isbn))) qc.removeQueries({ queryKey: queryKeys.title(isbn) });
-      toast.success(`Upload saved: ${fmtInt(res.changed)} value${res.changed === 1 ? "" : "s"} updated.`);
+      for (const isbn of new Set(changes.map((c) => c.isbn))) qc.removeQueries({ queryKey: queryKeys.title(isbn) });
+      if (res.conflicts.length) {
+        toast.warning(`${fmtInt(res.conflicts.length)} cell${res.conflicts.length === 1 ? " was" : "s were"} changed by someone else since the preview — not overwritten.`);
+      } else {
+        toast.success(`Upload saved: ${fmtInt(changed)} value${changed === 1 ? "" : "s"} updated.`);
+      }
     } catch (err) {
       console.error(err);
       toast.error("The upload stopped part-way. Values saved so far are kept; upload the file again to finish.");
@@ -102,6 +108,23 @@ export function UploadDialog({ open, onOpenChange }: { open: boolean; onOpenChan
           <Done
             changed={state.changed}
             failed={state.failed}
+            conflicts={state.conflicts}
+            onOverwrite={() =>
+              save(
+                state.preview,
+                state.conflicts.map((c) => ({
+                  isbn: c.isbn,
+                  title: state.preview.changes.find((x) => x.isbn === c.isbn)?.title ?? c.isbn,
+                  level: c.level,
+                  ref: c.ref,
+                  field: c.field,
+                  before: c.current,
+                  after: c.yours,
+                })),
+                true,
+                state.changed,
+              )
+            }
             onAnother={reset}
             onClose={() => {
               onOpenChange(false);
@@ -369,11 +392,15 @@ function PreviewBody({
 function Done({
   changed,
   failed,
+  conflicts,
+  onOverwrite,
   onAnother,
   onClose,
 }: {
   changed: number;
   failed: { isbn: string; error: string }[];
+  conflicts: UploadConflict[];
+  onOverwrite: () => void;
   onAnother: () => void;
   onClose: () => void;
 }) {
@@ -390,6 +417,29 @@ function Done({
           {failed.map((f) => `${f.isbn} (${f.error})`).join("; ")}
         </div>
       ) : null}
+      {conflicts.length ? (
+        <div className="mt-3 w-full max-w-xl rounded-lg border border-warn/30 bg-warn-soft/60 text-left">
+          <div className="flex items-center gap-2 px-3 py-2 text-[13px] font-medium text-warn">
+            <AlertTriangle className="size-4" />
+            {fmtInt(conflicts.length)} cell{conflicts.length === 1 ? " was" : "s were"} changed by someone else after your preview — kept their value
+          </div>
+          <ul className="scrollbar-thin max-h-40 overflow-y-auto border-t border-warn/20 px-3 py-1.5 text-xs text-ink-2">
+            {conflicts.slice(0, 100).map((c, i) => (
+              <li key={i} className="py-1">
+                <span className="num">{c.isbn}</span> · {conflictRow(c)} · {FIELD_LABEL[c.field]}:{" "}
+                <span className="font-medium text-ink">{show(c.current)}</span>
+                {c.changedBy ? <span className="text-muted"> by {c.changedBy.split("@")[0]}</span> : null}
+                <span className="text-muted"> (your file: {show(c.yours)})</span>
+              </li>
+            ))}
+          </ul>
+          <div className="flex justify-end border-t border-warn/20 px-3 py-2">
+            <Button size="sm" variant="outline" onClick={onOverwrite}>
+              Overwrite these {fmtInt(conflicts.length)} cell{conflicts.length === 1 ? "" : "s"} with my file
+            </Button>
+          </div>
+        </div>
+      ) : null}
       <div className="mt-4 flex gap-2">
         <Button onClick={onAnother}>Upload another file</Button>
         <Button variant="primary" onClick={onClose}>
@@ -398,4 +448,10 @@ function Done({
       </div>
     </div>
   );
+}
+
+function conflictRow(c: UploadConflict) {
+  if (c.level === "channel") return c.ref.channelName ?? c.ref.channelId ?? "—";
+  if (c.level === "org") return c.ref.orgName ?? c.ref.orgId ?? "—";
+  return c.ref.accountName ?? c.ref.accountId ?? "—";
 }

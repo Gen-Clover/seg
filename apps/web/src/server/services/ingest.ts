@@ -9,6 +9,10 @@ import {
   buildFactsSql,
   buildStatsSql,
   buildTitlesSql,
+  buildCurrentCommentsSql,
+  COMMENTS_TABLE,
+  type CommentDoc,
+  indexOptions,
   computeTitleTotals,
   factFromRow,
   newTitleDoc,
@@ -23,6 +27,7 @@ import { hashPassword } from "@seg/data/password";
 import { clean, estimateId, normalizeAccount, refForLevel, type Level } from "@seg/domain";
 import { bigquery, bigQueryConfig } from "../bigquery";
 import { collections, db } from "../db";
+import { refreshTrends } from "./trends";
 import { domainConfig, env } from "../env";
 
 type Row = Record<string, unknown>;
@@ -42,7 +47,9 @@ export interface IngestResult {
   accounts: number;
   restoredEstimates: number;
   restoredPlans: number;
+  restoredComments: number;
   seededUsers: number;
+  trendTitles: number;
   totalsRecomputed: number;
   ms: number;
 }
@@ -74,7 +81,7 @@ export async function runIngest(options: { rebuildSql: boolean }): Promise<Inges
 
   const database = await db();
   for (const [name, specs] of Object.entries(INDEXES)) {
-    for (const idx of specs) await database.collection(name).createIndex(idx.key, { name: idx.name, ...(idx.unique ? { unique: true } : {}) });
+    for (const idx of specs) await database.collection(name).createIndex(idx.key, indexOptions(idx));
   }
 
   const now = new Date().toISOString();
@@ -165,6 +172,9 @@ export async function runIngest(options: { rebuildSql: boolean }): Promise<Inges
     restoredPlans = plans.length;
   }
 
+  // 3b. Comments, likewise restored only into an empty collection (BigQuery keeps every version).
+  const restoredComments = await restoreComments();
+
   // 4. Demo users when the users collection is empty (production signs in with Entra ID).
   let seededUsers = 0;
   const users = await collections.users();
@@ -202,14 +212,19 @@ export async function runIngest(options: { rebuildSql: boolean }): Promise<Inges
   });
   await chunked(totalOps, 1000, (chunk) => titles.bulkWrite(chunk, { ordered: false }));
 
+  // 6. Weekly totals for the season dashboard.
+  const trendTitles = (await refreshTrends()).titles;
+
   const result: IngestResult = {
     titles: refs.length,
     facts: facts.length,
     accounts: uniqueAccounts.length,
     restoredEstimates,
     restoredPlans,
+    restoredComments,
     seededUsers,
     totalsRecomputed: totalOps.length,
+    trendTitles,
     ms: Date.now() - started,
   };
   await (await collections.jobRuns()).insertOne({
@@ -221,4 +236,37 @@ export async function runIngest(options: { rebuildSql: boolean }): Promise<Inges
     detail: { ...result },
   });
   return result;
+}
+
+/** Restores comments from SEG_COMMENTS into an empty collection (skipped if the table does not exist yet). */
+async function restoreComments(): Promise<number> {
+  const comments = await collections.comments();
+  if ((await comments.estimatedDocumentCount()) > 0) return 0;
+  const cfg = bigQueryConfig();
+  const [exists] = await bigquery().dataset(cfg.appDataset).table(COMMENTS_TABLE).exists();
+  if (!exists) return 0;
+  const rows = await query(buildCurrentCommentsSql(cfg));
+  const ts = (v: unknown) => (v && typeof v === "object" ? String((v as Row).value) : v ? String(v) : null);
+  const syncedAt = new Date().toISOString();
+  const docs: CommentDoc[] = rows.map((r) => ({
+    _id: String(r.comment_id),
+    isbn: String(r.isbn),
+    threadKey: String(r.thread_key),
+    level: String(r.level) as CommentDoc["level"],
+    channelId: clean(r.distribution_channel),
+    channelName: clean(r.distribution_channel_name),
+    orgId: clean(r.organization_id),
+    orgName: clean(r.organization_name),
+    accountId: clean(r.account_number),
+    accountName: clean(r.account_name),
+    body: String(r.body ?? ""),
+    mentions: String(r.mentions ?? "").split(",").filter(Boolean),
+    authorEmail: String(r.author_email ?? ""),
+    authorName: String(r.author_name ?? ""),
+    createdAt: ts(r.created_at) ?? syncedAt,
+    deletedAt: ts(r.deleted_at),
+    syncedAt,
+  }));
+  await chunked(docs, 2000, (chunk) => comments.insertMany(chunk, { ordered: false }));
+  return docs.length;
 }

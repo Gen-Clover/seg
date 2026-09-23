@@ -1,17 +1,20 @@
 "use client";
 
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { ArrowRight, History, Search } from "lucide-react";
+import { ArrowRight, RotateCcw, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { EstimateEventDoc } from "@seg/data";
 import { Button } from "@/components/ui/button";
 import { Badge, Input, Skeleton, Spinner } from "@/components/ui/misc";
-import { Dialog, DialogTrigger, SheetContent } from "@/components/ui/overlay";
+import { Dialog, SheetContent, Tooltip } from "@/components/ui/overlay";
 import { api } from "@/lib/api";
-import { queryKeys } from "@/lib/queries";
-import { fmtDate, fmtInt } from "@/lib/utils";
+import { clockTime } from "@/lib/people";
+import { queryKeys, usePersonName } from "@/lib/queries";
+import { cn, fmtDate, fmtInt } from "@/lib/utils";
+import { CommentsTab, type ThreadTarget } from "./comments";
 
-type HistoryItem = Omit<EstimateEventDoc, "syncedAt">;
+export type HistoryItem = Omit<EstimateEventDoc, "syncedAt">;
+export type PanelTab = "comments" | "history";
 
 const FIELD_LABEL: Record<string, string> = {
   laydownGoal: "Laydown goal",
@@ -30,36 +33,84 @@ function rowLabel(e: HistoryItem): { level: string; name: string } {
 }
 
 const show = (v: string | number | null) => (v === null || v === "" ? "—" : typeof v === "number" ? fmtInt(v) : v);
-const who = (email: string) => email.split("@")[0];
 const localDay = (iso: string) => {
   const d = new Date(iso);
   const p = (n: number) => String(n).padStart(2, "0");
   return fmtDate(`${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`);
 };
-const time = (iso: string) => new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 
-/** Every change made to a title — grid edits, uploads and comparable-title changes — newest first. */
-export function HistoryPanel({ isbn }: { isbn: string }) {
-  const [open, setOpen] = useState(false);
+/** Title side panel: comments and change history. */
+export function ActivityPanel({
+  isbn,
+  open,
+  onOpenChange,
+  tab,
+  onTab,
+  thread,
+  onThread,
+  onShowRow,
+  me,
+  canEdit,
+  currentValue,
+  onRestore,
+}: {
+  isbn: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  tab: PanelTab;
+  onTab: (tab: PanelTab) => void;
+  thread: ThreadTarget | null;
+  onThread: (t: ThreadTarget | null) => void;
+  onShowRow: (t: ThreadTarget) => void;
+  me: { email: string; role: string };
+  canEdit: boolean;
+  /** The value a history item's cell holds now (to hide pointless restores). */
+  currentValue: (item: HistoryItem) => string | number | null | undefined;
+  onRestore: (item: HistoryItem) => void;
+}) {
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="sm">
-          <History />
-          History
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       {open ? (
-        <SheetContent title="Change history" description="Every saved change on this title, newest first.">
-          <HistoryList isbn={isbn} />
+        <SheetContent title={tab === "comments" ? "Comments" : "Change history"} description={tab === "comments" ? "Conversations on this title and its rows." : "Every saved change on this title, newest first."}>
+          <div className="flex gap-1 border-b border-line px-4 pt-1">
+            {(["comments", "history"] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => onTab(t)}
+                className={cn(
+                  "-mb-px border-b-2 px-3 py-2 text-[13px] font-medium",
+                  tab === t ? "border-brand text-ink" : "border-transparent text-muted hover:text-ink",
+                )}
+              >
+                {t === "comments" ? "Comments" : "History"}
+              </button>
+            ))}
+          </div>
+          {tab === "comments" ? (
+            <CommentsTab isbn={isbn} thread={thread} onThread={onThread} onShowRow={onShowRow} me={me} />
+          ) : (
+            <HistoryList isbn={isbn} canEdit={canEdit} currentValue={currentValue} onRestore={onRestore} />
+          )}
         </SheetContent>
       ) : null}
     </Dialog>
   );
 }
 
-function HistoryList({ isbn }: { isbn: string }) {
+function HistoryList({
+  isbn,
+  canEdit,
+  currentValue,
+  onRestore,
+}: {
+  isbn: string;
+  canEdit: boolean;
+  currentValue: (item: HistoryItem) => string | number | null | undefined;
+  onRestore: (item: HistoryItem) => void;
+}) {
   const [q, setQ] = useState("");
+  const who = usePersonName();
   const history = useInfiniteQuery({
     queryKey: queryKeys.history(isbn),
     queryFn: ({ pageParam }) =>
@@ -129,12 +180,30 @@ function HistoryList({ isbn }: { isbn: string }) {
               <ol>
                 {g.items.map((e) => {
                   const r = rowLabel(e);
+                  const now = currentValue(e);
+                  const restorable = canEdit && now !== undefined && String(now ?? "") !== String(e.oldValue ?? "");
                   return (
-                    <li key={e._id} className="border-b border-line/70 px-5 py-2.5">
+                    <li key={e._id} className="group border-b border-line/70 px-5 py-2.5">
                       <div className="flex items-center gap-2 text-xs text-muted">
                         <span className="font-medium text-ink-2">{who(e.changedBy)}</span>
-                        <span>{time(e.changedAt)}</span>
-                        {e.source !== "grid" ? <Badge tone={e.source === "upload" ? "info" : "neutral"} className="capitalize">{e.source}</Badge> : null}
+                        <span>{clockTime(e.changedAt)}</span>
+                        {e.source !== "grid" ? (
+                          <Badge tone={e.source === "upload" ? "info" : "neutral"} className="capitalize">
+                            {e.source}
+                          </Badge>
+                        ) : null}
+                        {restorable ? (
+                          <Tooltip content={`Set ${FIELD_LABEL[e.field] ?? e.field} back to ${show(e.oldValue)}`}>
+                            <button
+                              type="button"
+                              onClick={() => onRestore(e)}
+                              className="ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-info opacity-0 hover:bg-info-soft focus:opacity-100 group-hover:opacity-100"
+                            >
+                              <RotateCcw className="size-3" />
+                              Restore
+                            </button>
+                          </Tooltip>
+                        ) : null}
                       </div>
                       <div className="mt-1 text-[13px] text-ink">
                         <span className="font-medium">{FIELD_LABEL[e.field] ?? e.field}</span>

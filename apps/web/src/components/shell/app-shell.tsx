@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, LayoutDashboard, LogOut, PanelLeft, Search, SquarePen } from "lucide-react";
+import { ExternalLink, Home, LayoutDashboard, LogOut, PanelLeft, Search, SquarePen } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { Session } from "@/server/auth/session";
@@ -12,6 +12,7 @@ import { BrandMark, BrandName } from "../brand";
 import { Badge, Kbd } from "../ui/misc";
 import { Tooltip } from "../ui/overlay";
 import { CommandPaletteProvider, useCommandPalette } from "./command-palette";
+import { NotificationsBell } from "./notifications";
 import { ThemeToggle } from "./theme-toggle";
 
 export function AppShell({
@@ -45,7 +46,8 @@ function Sidebar({ user, mainMenuUrl }: { user: Session; mainMenuUrl: string | n
 
   const lastTitle = worklist?.isbns[0];
   const nav = [
-    { href: "/", label: "Summary", icon: LayoutDashboard, active: pathname === "/" },
+    { href: "/", label: "My Desk", icon: Home, active: pathname === "/" },
+    { href: "/summary", label: "Summary", icon: LayoutDashboard, active: pathname === "/summary" },
     {
       href: pathname.startsWith("/titles/") ? pathname : lastTitle ? `/titles/${lastTitle}` : "/titles",
       label: "Title workspace",
@@ -109,6 +111,7 @@ function Sidebar({ user, mainMenuUrl }: { user: Session; mainMenuUrl: string | n
             </Link>
           </Tooltip>
         ))}
+        <NotificationsBell collapsed={collapsed} />
         {mainMenuUrl ? (
           <Tooltip content={collapsed ? "Main menu" : null} side="right">
             <a

@@ -15,6 +15,8 @@ import { join, resolve } from "node:path";
 import { BigQuery, type TableField } from "@google-cloud/bigquery";
 import { DEFAULT_DOMAIN_CONFIG, ESTIMATE_FIELDS, estimateId, type EstimateRecord } from "@seg/domain";
 import {
+  COMMENTS_SCHEMA,
+  COMMENTS_TABLE,
   ESTIMATE_EVENTS_SCHEMA,
   ESTIMATE_EVENTS_TABLE,
   SOURCE_TABLES,
@@ -151,6 +153,16 @@ await eventsTable.load(eventsFile, { sourceFormat: "NEWLINE_DELIMITED_JSON", wri
 console.log(`  ${ESTIMATE_EVENTS_TABLE.padEnd(28)} ${events.length} seeded events`);
 
 await query(buildCurrentEstimatesViewSql(cfg), "SEG_ESTIMATES_CURRENT view");
+
+// Comments start empty (they refer to the titles loaded above).
+const commentsTable = app.table(COMMENTS_TABLE);
+if ((await commentsTable.exists())[0]) await commentsTable.delete();
+await app.createTable(COMMENTS_TABLE, {
+  schema: { fields: toSchema(COMMENTS_SCHEMA) },
+  timePartitioning: { type: "DAY", field: "created_at" },
+  clustering: { fields: ["isbn"] },
+});
+console.log(`  ${COMMENTS_TABLE.padEnd(28)} created (empty)`);
 
 console.log("Running ingestion SQL…");
 await query(buildFactsSql(cfg), "SEG_TITLE_ACCOUNT_FACTS");

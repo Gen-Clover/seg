@@ -73,7 +73,8 @@ export function editBlock(
     return {
       kind: "lock",
       lock,
-      message: `Locked by ${lock.lockedByName} on ${new Date(lock.lockedAt).toLocaleDateString()}${lock.note ? ` — ${lock.note}` : ""}`,
+      // The date is shown by the banner itself (local time zone, rendered in the browser).
+      message: `Locked by ${lock.lockedByName}${lock.note ? ` — ${lock.note}` : ""}`,
     };
   }
   if (user.role !== "admin" && user.scope) {

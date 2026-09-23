@@ -5,7 +5,7 @@ import { applyPlanChange, planChangeSchema } from "@/server/services/estimates";
 export const PATCH = route<{ isbn: string }>(
   async ({ request, params, session }) => {
     const change = await readJson(request, planChangeSchema);
-    return applyPlanChange(params.isbn, change, session.email);
+    return applyPlanChange(params.isbn, change, session);
   },
-  { roles: ["admin", "editor"] },
+  { roles: ["admin", "editor"], write: true },
 );

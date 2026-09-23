@@ -15,6 +15,10 @@ export interface DomainConfig {
   excludedFormats: readonly string[];
   /** FORMAT values excluded when they contain any of these words (case-insensitive). */
   excludedFormatWords: readonly string[];
+  /** A title needs a division to be in scope (legacy: yes). */
+  requireDivision: boolean;
+  /** A title needs an imprint to be in scope (legacy: yes). */
+  requireImprint: boolean;
 }
 
 export const DEFAULT_DOMAIN_CONFIG: DomainConfig = {
@@ -24,6 +28,8 @@ export const DEFAULT_DOMAIN_CONFIG: DomainConfig = {
   includedIpmFormats: ["HC", "PB", "BB"],
   excludedFormats: ["ARC", "Catalog"],
   excludedFormatWords: ["Display"],
+  requireDivision: true,
+  requireImprint: true,
 };
 
 export function isAccountLevelChannel(
@@ -56,7 +62,9 @@ export function isTitleInScope(
   title: { season: string | null; ipmFormat: string | null; format: string | null; division: string | null; imprint: string | null; isbn: string | null },
   config: DomainConfig = DEFAULT_DOMAIN_CONFIG,
 ): boolean {
-  if (!title.isbn?.trim() || !title.division?.trim() || !title.imprint?.trim()) return false;
+  if (!title.isbn?.trim()) return false;
+  if ((config.requireDivision ?? true) && !title.division?.trim()) return false;
+  if ((config.requireImprint ?? true) && !title.imprint?.trim()) return false;
   const season = parseSeason(title.season);
   if (!season || season.year < config.minSeasonYear) return false;
   if (!config.seasonNames.some((n) => n.toLowerCase() === season.name.toLowerCase())) return false;

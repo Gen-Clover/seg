@@ -20,6 +20,7 @@ import {
   type NotificationView,
   type TitleSummaryRow,
 } from "@/lib/queries";
+import { useAppSettings } from "@/lib/settings";
 import { useLocalPref } from "@/lib/use-local-pref";
 import { cn, fmtDate, fmtInt, timeAgo } from "@/lib/utils";
 import { setWorklist } from "@/lib/worklist";
@@ -46,9 +47,12 @@ export function DeskView({ name }: { name: string }) {
   const desk = useDesk();
   const unread = useUnreadCount();
   const [tab, setTab] = useState<Tab>("due");
-  const [windowPref, setWindowPref] = useLocalPref("seg-desk-window", "14");
+  const deskDefaults = useAppSettings().desk;
+  // The admin sets the default window; each person can still pick another one.
+  const [windowPref, setWindowPref] = useLocalPref("seg-desk-window", String(deskDefaults.dueWindowDays));
+  const windows = [...new Set([...WINDOWS, deskDefaults.dueWindowDays])].sort((a, b) => a - b);
   const [scopePref, setScopePref] = useLocalPref("seg-desk-scope", "{}");
-  const windowDays = Number(windowPref) || 14;
+  const windowDays = Number(windowPref) || deskDefaults.dueWindowDays;
   const scope = useMemo(() => {
     try {
       const s = JSON.parse(scopePref) as { divisions?: string[]; imprints?: string[] };
@@ -75,12 +79,12 @@ export function DeskView({ name }: { name: string }) {
   const today = todayLocal();
   const lists = useMemo(
     () => ({
-      due: dueSoon(titles, today, windowDays),
-      gap: belowGoal(titles),
+      due: dueSoon(titles, today, windowDays, deskDefaults.overdueDays),
+      gap: belowGoal(titles, deskDefaults.belowGoalThresholdPct),
       comp: withoutComparable(titles, today).filter((c) => c.daysToPub === null || c.daysToPub >= 0),
       changed: (desk.data?.changed ?? []).filter((c) => inScope.has(c.isbn) || !byIsbn.has(c.isbn)),
     }),
-    [titles, today, windowDays, desk.data, inScope, byIsbn],
+    [titles, today, windowDays, deskDefaults, desk.data, inScope, byIsbn],
   );
 
   const facet = (get: (t: TitleSummaryRow) => string | null) => {
@@ -130,7 +134,7 @@ export function DeskView({ name }: { name: string }) {
           <MultiSelect label="Division" options={facet((t) => t.division)} selected={scope.divisions} onChange={(divisions) => setScope({ ...scope, divisions })} />
           <MultiSelect label="Imprint" options={facet((t) => t.imprint)} selected={scope.imprints} onChange={(imprints) => setScope({ ...scope, imprints })} />
           <div className="flex rounded-lg border border-line bg-surface p-0.5 text-xs">
-            {WINDOWS.map((w) => (
+            {windows.map((w) => (
               <button
                 key={w}
                 type="button"
@@ -388,7 +392,7 @@ function Mentions() {
 
   const go = (n: NotificationView) => {
     if (!n.readAt) read.mutate({ ids: [n._id] });
-    router.push(n.type === "chat_mention" ? `/chat?room=${encodeURIComponent(n.roomId ?? "everyone")}` : `/titles/${n.isbn}?thread=${encodeURIComponent(n.threadKey)}`);
+    router.push(n.type === "chat_mention" || n.type === "chat_dm" ? `/chat?room=${encodeURIComponent(n.roomId ?? "everyone")}` : `/titles/${n.isbn}?thread=${encodeURIComponent(n.threadKey)}`);
   };
 
   return (
@@ -423,9 +427,15 @@ export function NotificationRow({ n, onOpen, compact }: { n: NotificationView; o
         <span className="min-w-0 flex-1">
           <span className="block text-[13px] text-ink">
             <span className="font-medium">{n.fromName}</span>{" "}
-            {n.type === "chat_mention" ? "mentioned you in" : n.type === "mention" ? "mentioned you on" : "replied on"}{" "}
-            <span className="font-medium">{n.type === "chat_mention" ? n.titleName : n.titleName}</span>
-            {n.type === "chat_mention" ? null : <span className="text-muted"> · {n.rowLabel}</span>}
+            {n.type === "chat_dm"
+              ? "sent you a message"
+              : n.type === "chat_mention"
+                ? "mentioned you in"
+                : n.type === "mention"
+                  ? "mentioned you on"
+                  : "replied on"}{" "}
+            {n.type === "chat_dm" ? null : <span className="font-medium">{n.titleName}</span>}
+            {n.type === "chat_mention" || n.type === "chat_dm" ? null : <span className="text-muted"> · {n.rowLabel}</span>}
           </span>
           <span className="mt-0.5 line-clamp-2 block text-[13px] text-ink-2">{n.excerpt}</span>
           <span className="mt-0.5 block text-[11px] text-subtle">{timeAgo(n.createdAt)}</span>

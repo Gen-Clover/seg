@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/overlay";
 import { useMe, type TitleSummaryRow } from "@/lib/queries";
 import { fmtInt } from "@/lib/utils";
+import { useAppSettings, useDomainConfig } from "@/lib/settings";
 import { UploadDialog } from "../upload/upload-dialog";
 import { downloadMeetingReport } from "../report/meeting-report";
 import { exportAccountDetails, exportSummary } from "./exports";
@@ -15,7 +16,12 @@ import { describeFilters, type SummaryFilters } from "./filters";
 /** Export and upload for the titles currently shown (legacy Export / Upload buttons). */
 export function SummaryActions({ rows, filters, disabled }: { rows: TitleSummaryRow[]; filters: SummaryFilters; disabled?: boolean }) {
   const me = useMe();
-  const canEdit = me.data?.user.role === "admin" || me.data?.user.role === "editor";
+  const settings = useAppSettings();
+  const config = useDomainConfig();
+  const { uploads, exports, meetingReport } = settings.features;
+  // Uploads are also closed to non-admins during maintenance (the server refuses them anyway).
+  const canUpload =
+    uploads && (me.data?.user.role === "admin" || (me.data?.user.role === "editor" && !settings.maintenance.on));
   const [menu, setMenu] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -36,6 +42,7 @@ export function SummaryActions({ rows, filters, disabled }: { rows: TitleSummary
         rows.map((r) => r.isbn),
         format,
         (done, total) => toast.loading(`Preparing account details · ${fmtInt(done)} of ${fmtInt(total)} titles`, { id }),
+        config,
       );
       toast.success(`Account details exported · ${fmtInt(res.rows)} rows from ${fmtInt(res.titles)} titles`, { id });
     } catch (err) {
@@ -51,7 +58,7 @@ export function SummaryActions({ rows, filters, disabled }: { rows: TitleSummary
     setExporting(true);
     const id = toast.loading(`Preparing the meeting report for ${fmtInt(count)} titles…`);
     try {
-      const res = await downloadMeetingReport(rows.map((r) => r.isbn), describeFilters(filters), (label) => toast.loading(label, { id }));
+      const res = await downloadMeetingReport(rows.map((r) => r.isbn), describeFilters(filters), (label) => toast.loading(label, { id }), config);
       toast.success(`Meeting report ready · ${fmtInt(res.titles)} titles, ${fmtInt(res.pages)} pages`, { id });
     } catch (err) {
       console.error(err);
@@ -63,12 +70,13 @@ export function SummaryActions({ rows, filters, disabled }: { rows: TitleSummary
 
   return (
     <div className="flex items-center gap-2">
-      {canEdit ? (
+      {canUpload ? (
         <Button onClick={() => setUploading(true)} disabled={disabled}>
           <Upload />
           Upload
         </Button>
       ) : null}
+      {exports || meetingReport ? (
       <Popover open={menu} onOpenChange={setMenu}>
         <PopoverTrigger asChild>
           <Button variant="primary" disabled={disabled || count === 0 || exporting}>
@@ -81,23 +89,30 @@ export function SummaryActions({ rows, filters, disabled }: { rows: TitleSummary
           <div className="px-3 pb-1 pt-2 text-[11px] font-medium text-muted">
             {fmtInt(count)} title{count === 1 ? "" : "s"} in the current view
           </div>
-          <MenuItem icon={<Sheet />} title="Summary" hint="One row per title with totals · .xlsx" onClick={runSummary} />
-          <MenuItem
-            icon={<FileSpreadsheet />}
-            title="Account details"
-            hint="Every channel, organization and account · .xlsx — edit and upload it back"
-            onClick={() => runDetails("xlsx")}
-          />
-          <MenuItem icon={<FileSpreadsheet />} title="Account details (CSV)" hint="Same layout as a .csv file" onClick={() => runDetails("csv")} />
-          <div className="my-1 border-t border-line" />
-          <MenuItem
-            icon={<FileText />}
-            title="Meeting report"
-            hint="PDF · cover with totals, then each title with its comparable title and channels"
-            onClick={runReport}
-          />
+          {exports ? (
+            <>
+              <MenuItem icon={<Sheet />} title="Summary" hint="One row per title with totals · .xlsx" onClick={runSummary} />
+              <MenuItem
+                icon={<FileSpreadsheet />}
+                title="Account details"
+                hint="Every channel, organization and account · .xlsx — edit and upload it back"
+                onClick={() => runDetails("xlsx")}
+              />
+              <MenuItem icon={<FileSpreadsheet />} title="Account details (CSV)" hint="Same layout as a .csv file" onClick={() => runDetails("csv")} />
+            </>
+          ) : null}
+          {exports && meetingReport ? <div className="my-1 border-t border-line" /> : null}
+          {meetingReport ? (
+            <MenuItem
+              icon={<FileText />}
+              title="Meeting report"
+              hint="PDF · cover with totals, then each title with its comparable title and channels"
+              onClick={runReport}
+            />
+          ) : null}
         </PopoverContent>
       </Popover>
+      ) : null}
       <UploadDialog open={uploading} onOpenChange={setUploading} />
     </div>
   );

@@ -23,6 +23,15 @@ export const COLLECTIONS = {
   presence: "presence",
   titleVisits: "title_visits",
   chatReads: "chat_reads",
+  // Admin
+  settings: "app_settings",
+  adminAudit: "admin_audit",
+  sessions: "sessions",
+  signIns: "sign_ins",
+  uploadLogs: "upload_logs",
+  chatReports: "chat_reports",
+  assistantLog: "assistant_log",
+  syncState: "sync_state",
   // Derived (recomputed from estimates and history)
   trends: "trends",
 } as const;
@@ -113,7 +122,7 @@ export interface EstimateEventDoc extends AccountRef {
   newValue: string | number | null;
   changedBy: string;
   changedAt: string;
-  source: "grid" | "upload" | "migration";
+  source: "grid" | "upload" | "migration" | "restore" | "admin";
   syncedAt: string | null;
 }
 
@@ -142,7 +151,7 @@ export interface NotificationDoc {
   /** Recipient. */
   email: string;
   /** mention / reply: title comments; chat_mention: a chat message. */
-  type: "mention" | "reply" | "chat_mention";
+  type: "mention" | "reply" | "chat_mention" | "chat_dm";
   /** Comment or chat message id. */
   commentId: string;
   /** Title comments: the title and thread. Empty for chat. */
@@ -175,6 +184,8 @@ export interface ChatRoomDoc {
   updatedAt: string;
   lastMessageAt: string | null;
   lastMessage: { authorName: string; excerpt: string } | null;
+  /** Archived by an admin: hidden from lists and read-only. */
+  archivedAt?: string | null;
   syncedAt: string | null;
 }
 
@@ -242,15 +253,116 @@ export interface UserDoc {
   passwordHash: string | null;
   active: boolean;
   createdAt: string;
+  /** Seeded demo account (hidden and blocked when demo accounts are turned off). */
+  demo?: boolean;
+  createdBy?: string;
+  lastSignInAt?: string | null;
+  /** Editing limited to these divisions / imprints (empty = all). Viewers are always read-only. */
+  scope?: { divisions: string[]; imprints: string[] };
+  /** Sessions issued before this time are no longer valid ("sign out everywhere"). */
+  sessionsValidAfter?: string | null;
+  updatedAt?: string;
+  /** Outbox for SEG_USERS (never includes the password). */
+  syncedAt?: string | null;
+}
+
+/** A signed-in browser. The session cookie carries this id; revoking it signs that browser out. */
+export interface SessionDoc {
+  _id: string; // jti
+  email: string;
+  name: string;
+  createdAt: string;
+  lastSeenAt: string;
+  expiresAt: Date;
+  userAgent: string | null;
+  ip: string | null;
+  revokedAt: string | null;
+  revokedBy: string | null;
+}
+
+export interface SignInDoc {
+  _id: string;
+  email: string;
+  at: string;
+  ok: boolean;
+  reason: string | null;
+  ip: string | null;
+  userAgent: string | null;
+  expiresAt: Date;
+}
+
+/** One spreadsheet upload (all its save batches). */
+export interface UploadLogDoc {
+  _id: string; // upload id from the browser
+  email: string;
+  name: string;
+  fileName: string;
+  rowsRead: number;
+  errorRows: number;
+  valuesChanged: number;
+  conflicts: number;
+  failedTitles: number;
+  titles: number;
+  overwrite: boolean;
+  startedAt: string;
+  finishedAt: string;
+}
+
+export interface ChatReportDoc {
+  _id: string;
+  messageId: string;
+  roomId: string;
+  excerpt: string;
+  authorEmail: string;
+  reporterEmail: string;
+  reporterName: string;
+  reason: string;
+  at: string;
+  status: "open" | "dismissed" | "removed";
+  resolvedBy: string | null;
+  resolvedAt: string | null;
+}
+
+export interface AssistantLogDoc {
+  _id: string;
+  email: string;
+  text: string;
+  intent: string;
+  answered: boolean;
+  at: string;
+  expiresAt: Date;
+}
+
+export interface AdminAuditDoc {
+  _id: string;
+  at: string;
+  by: string;
+  byName: string;
+  area: string;
+  action: string;
+  detail: string;
+}
+
+/** Write-back bookkeeping (last successful send, last error). */
+export interface SyncStateDoc {
+  _id: "writeback";
+  lastSuccessAt: string | null;
+  lastSent: number;
+  lastError: string | null;
+  lastErrorAt: string | null;
 }
 
 export interface JobRunDoc {
   _id: string;
-  job: "ingest" | "writeback" | "seed";
+  job: "ingest" | "writeback" | "seed" | "trends" | "apply-rules" | "bulk" | "demo-reset";
   startedAt: string;
   finishedAt: string | null;
   ok: boolean | null;
   detail: Record<string, unknown>;
+  error?: string | null;
+  by?: string;
+  /** Removed automatically after the job-history retention period. */
+  expiresAt?: Date;
 }
 
 type IndexSpec = { key: Record<string, 1 | -1 | "text">; name: string; unique?: boolean; expireAfterSeconds?: number };
@@ -293,6 +405,28 @@ export const INDEXES: Record<string, IndexSpec[]> = {
     { key: { syncedAt: 1 }, name: "outbox" },
   ],
   [COLLECTIONS.chatReads]: [{ key: { email: 1 }, name: "email" }],
+  [COLLECTIONS.users]: [{ key: { syncedAt: 1 }, name: "outbox" }],
+  [COLLECTIONS.settings]: [{ key: { syncedAt: 1 }, name: "outbox" }],
+  [COLLECTIONS.adminAudit]: [{ key: { at: -1 }, name: "recent" }],
+  [COLLECTIONS.sessions]: [
+    { key: { email: 1, lastSeenAt: -1 }, name: "email" },
+    { key: { expiresAt: 1 }, name: "expire", expireAfterSeconds: 0 },
+  ],
+  [COLLECTIONS.signIns]: [
+    { key: { at: -1 }, name: "recent" },
+    { key: { email: 1, at: -1 }, name: "email" },
+    { key: { expiresAt: 1 }, name: "expire", expireAfterSeconds: 0 },
+  ],
+  [COLLECTIONS.uploadLogs]: [{ key: { startedAt: -1 }, name: "recent" }],
+  [COLLECTIONS.chatReports]: [{ key: { status: 1, at: -1 }, name: "status" }],
+  [COLLECTIONS.assistantLog]: [
+    { key: { answered: 1, at: -1 }, name: "answered" },
+    { key: { expiresAt: 1 }, name: "expire", expireAfterSeconds: 0 },
+  ],
+  [COLLECTIONS.jobRuns]: [
+    { key: { job: 1, startedAt: -1 }, name: "job" },
+    { key: { expiresAt: 1 }, name: "expire", expireAfterSeconds: 0 },
+  ],
   [COLLECTIONS.notifications]: [
     { key: { email: 1, createdAt: -1 }, name: "inbox" },
     { key: { email: 1, readAt: 1 }, name: "unread" },

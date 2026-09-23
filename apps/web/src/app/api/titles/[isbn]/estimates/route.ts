@@ -5,7 +5,7 @@ import { applyEstimateChanges, estimateChangesSchema } from "@/server/services/e
 export const PATCH = route<{ isbn: string }>(
   async ({ request, params, session }) => {
     const { changes } = await readJson(request, estimateChangesSchema);
-    return applyEstimateChanges(params.isbn, changes, session.email);
+    return applyEstimateChanges(params.isbn, changes, session);
   },
-  { roles: ["admin", "editor"] },
+  { roles: ["admin", "editor"], write: true },
 );

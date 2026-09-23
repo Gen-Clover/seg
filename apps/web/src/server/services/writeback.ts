@@ -7,6 +7,11 @@ import {
   CHAT_ROOMS_TABLE,
   COMMENTS_SCHEMA,
   COMMENTS_TABLE,
+  SETTINGS_SCHEMA,
+  SETTINGS_TABLE,
+  USERS_SCHEMA,
+  USERS_TABLE,
+  type UserDoc,
   ESTIMATE_EVENTS_TABLE,
   tableSchema,
   type BqField,
@@ -42,6 +47,7 @@ export async function flushWriteback(limit = 1000): Promise<{ sent: number; pend
     console.error("[writeback] chat flush failed", err);
     return 0;
   });
+  await flushAdmin(limit).catch((err) => console.error("[writeback] admin flush failed", err));
 
   const batch = await events.find({ syncedAt: null }).sort({ changedAt: 1 }).limit(limit).toArray();
   if (!batch.length) return { sent: 0, pending: 0, comments, chat };
@@ -230,10 +236,71 @@ export function scheduleWriteback() {
   if (env().WRITEBACK === "none") return;
   after(async () => {
     try {
-      await flushWriteback();
+      await runWriteback();
     } catch (err) {
       // The scheduled job retries; the edit is safe in MongoDB.
       console.error("[writeback] flush failed", err);
     }
   });
+}
+
+/** Flushes the outbox and records the outcome (shown on the admin sync page). */
+export async function runWriteback(limit = 1000) {
+  const state = await collections.syncState();
+  try {
+    const result = await flushWriteback(limit);
+    if (env().WRITEBACK !== "none") {
+      await state.updateOne(
+        { _id: "writeback" },
+        { $set: { lastSuccessAt: new Date().toISOString(), lastSent: result.sent + result.comments + result.chat, lastError: null } },
+        { upsert: true },
+      );
+    }
+    return result;
+  } catch (err) {
+    await state.updateOne(
+      { _id: "writeback" },
+      { $set: { lastError: err instanceof Error ? err.message : String(err), lastErrorAt: new Date().toISOString() } },
+      { upsert: true },
+    );
+    throw err;
+  }
+}
+
+/** Admin settings and users (roles, access limits, status — never passwords). */
+async function flushAdmin(limit: number): Promise<number> {
+  type SettingsRow = { _id: string; settings: unknown; updatedAt: string | null; updatedBy: string | null; syncedAt: string | null };
+  const settings = await flushVersioned<SettingsRow>({
+    collection: (await collections.settings()) as unknown as Collection<SettingsRow>,
+    table: SETTINGS_TABLE,
+    schema: SETTINGS_SCHEMA,
+    partitionField: "created_at",
+    cluster: "settings_id",
+    limit,
+    versionOf: (d) => d.updatedAt ?? new Date(0).toISOString(),
+    unchanged: (d) => ({ updatedAt: d.updatedAt }),
+    row: (d, versionAt) => ({ settings_id: d._id, version_at: versionAt, settings_json: JSON.stringify(d.settings), changed_by: d.updatedBy, created_at: versionAt }),
+  });
+  const users = await flushVersioned<UserDoc & { syncedAt: string | null }>({
+    collection: (await collections.users()) as unknown as Collection<UserDoc & { syncedAt: string | null }>,
+    table: USERS_TABLE,
+    schema: USERS_SCHEMA,
+    partitionField: "created_at",
+    cluster: "email",
+    limit,
+    versionOf: (u) => u.updatedAt ?? u.createdAt,
+    unchanged: (u) => ({ updatedAt: u.updatedAt ?? null }),
+    row: (u, versionAt) => ({
+      email: u.email,
+      version_at: versionAt,
+      name: u.name,
+      role: u.role,
+      active: u.active,
+      demo: u.demo ?? u.email.endsWith("@seg-demo.com"),
+      scope_divisions: (u.scope?.divisions ?? []).join("|"),
+      scope_imprints: (u.scope?.imprints ?? []).join("|"),
+      created_at: u.createdAt,
+    }),
+  });
+  return settings + users;
 }

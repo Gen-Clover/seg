@@ -194,6 +194,30 @@ export const CHAT_MESSAGES_SCHEMA: BqField[] = [
   { name: "deleted_at", type: "TIMESTAMP" },
 ];
 
+/** Admin settings (append-only versions; the latest row is current). */
+export const SETTINGS_TABLE = "SEG_SETTINGS";
+export const SETTINGS_SCHEMA: BqField[] = [
+  { name: "settings_id", type: "STRING", mode: "REQUIRED" },
+  { name: "version_at", type: "TIMESTAMP", mode: "REQUIRED" },
+  { name: "settings_json", type: "STRING" },
+  { name: "changed_by", type: "STRING" },
+  { name: "created_at", type: "TIMESTAMP", mode: "REQUIRED" },
+];
+
+/** Users, roles and access limits (append-only versions; never the password). */
+export const USERS_TABLE = "SEG_USERS";
+export const USERS_SCHEMA: BqField[] = [
+  { name: "email", type: "STRING", mode: "REQUIRED" },
+  { name: "version_at", type: "TIMESTAMP", mode: "REQUIRED" },
+  { name: "name", type: "STRING" },
+  { name: "role", type: "STRING" },
+  { name: "active", type: "BOOL" },
+  { name: "demo", type: "BOOL" },
+  { name: "scope_divisions", type: "STRING" },
+  { name: "scope_imprints", type: "STRING" },
+  { name: "created_at", type: "TIMESTAMP", mode: "REQUIRED" },
+];
+
 /** Precomputed outputs of the ingestion SQL (in the app dataset). */
 export const FACTS_TABLE = "SEG_TITLE_ACCOUNT_FACTS";
 export const STATS_TABLE = "SEG_TITLE_STATS";

@@ -1,7 +1,7 @@
 import { toAccountFacts, type EstimateDoc, type TitleAccountFactDoc, type TrendsDoc } from "@seg/data";
 import { totalsAtPoints, weeklyPoints, type EstimateRecord, type HistoryChange } from "@seg/domain";
 import { collections } from "../db";
-import { domainConfig } from "../env";
+import { domainConfig } from "./settings";
 
 const WEEKS = 12;
 /** Recompute when the stored series is older than this (the nightly job normally refreshes it). */
@@ -39,7 +39,7 @@ export async function refreshTrends(now = new Date()): Promise<{ titles: number 
   const factsBy = group(facts, (f) => f.isbn);
   const estimatesBy = group(estimates, (e) => e.isbn);
   const historyBy = group(events, (e) => e.isbn);
-  const config = domainConfig();
+  const config = await domainConfig();
 
   const series: TrendsDoc["series"] = {};
   for (const isbn of isbns) {

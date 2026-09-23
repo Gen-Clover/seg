@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { env } from "@/server/env";
 import { errorResponse, HttpError } from "@/server/http";
+import { recordJob } from "@/server/services/jobs";
 import { refreshTrends } from "@/server/services/trends";
 
 export const maxDuration = 120;
@@ -11,7 +12,7 @@ export async function GET(request: Request) {
     const secret = env().CRON_SECRET;
     if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) throw new HttpError(401, "Unauthorized");
     const started = Date.now();
-    return NextResponse.json({ ...(await refreshTrends()), ms: Date.now() - started });
+    return NextResponse.json({ ...(await recordJob("trends", "schedule", () => refreshTrends())), ms: Date.now() - started });
   } catch (err) {
     return errorResponse(err);
   }

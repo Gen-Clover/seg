@@ -16,6 +16,8 @@ import {
 import { collections } from "../db";
 import { HttpError } from "../http";
 import { refreshTitleTotals } from "./totals";
+import type { Session } from "../auth/session";
+import { assertCanEditTitle, getSettings } from "./settings";
 import { scheduleWriteback } from "./writeback";
 
 const refSchema = z.object({
@@ -39,6 +41,8 @@ export const estimateChangeSchema = z.object({
    * still holds it; otherwise it comes back as a conflict. Omitted = overwrite.
    */
   expected: cellValueSchema.optional(),
+  /** "restore" when the value comes from the History panel (shown in the activity log). */
+  source: z.enum(["grid", "restore"]).optional(),
 });
 export const estimateChangesSchema = z.object({ changes: z.array(estimateChangeSchema).min(1).max(5000) });
 export type EstimateChangeInput = z.infer<typeof estimateChangeSchema>;
@@ -72,6 +76,7 @@ interface NormalizedChange {
   value: CellValue;
   /** undefined = no check (overwrite). */
   expected: CellValue | undefined;
+  source?: "grid" | "restore";
 }
 
 const blank = (field: EstimateField): CellValue => (field === "salesNotes" ? "" : null);
@@ -84,14 +89,14 @@ function holds(field: EstimateField, value: CellValue): Record<string, unknown> 
   return { [field]: value };
 }
 
-function normalizeValue(field: EstimateField, raw: CellValue): CellValue {
-  if (field === "salesNotes") return raw === null ? "" : String(raw).trim().slice(0, 2000);
+function normalizeValue(field: EstimateField, raw: CellValue, noteMax = 2000): CellValue {
+  if (field === "salesNotes") return raw === null ? "" : String(raw).trim().slice(0, noteMax);
   const parsed = parseEstimateInput(raw);
   if (parsed === undefined) throw new HttpError(400, `"${String(raw)}" is not a whole number.`);
   return parsed;
 }
 
-function normalizeChange(isbn: string, c: EstimateChangeInput): NormalizedChange {
+function normalizeChange(isbn: string, c: EstimateChangeInput, noteMax: number): NormalizedChange {
   const ref = refForLevel(c.level, normalizeAccount(c.ref));
   if (c.level === "org" && ref.orgId === null && ref.orgName === null) {
     throw new HttpError(400, "An organization row needs an organization.");
@@ -102,8 +107,9 @@ function normalizeChange(isbn: string, c: EstimateChangeInput): NormalizedChange
     level: c.level,
     ref,
     field: c.field,
-    value: normalizeValue(c.field, c.value),
-    expected: c.expected === undefined ? undefined : normalizeValue(c.field, c.expected),
+    value: normalizeValue(c.field, c.value, noteMax),
+    expected: c.expected === undefined ? undefined : normalizeValue(c.field, c.expected, noteMax),
+    source: c.source,
   };
 }
 
@@ -123,16 +129,20 @@ const isDuplicateKeyOnly = (err: unknown) =>
 export async function applyEstimateChanges(
   isbn: string,
   input: EstimateChangeInput[],
-  user: string,
+  session: Session,
   source: EstimateEventDoc["source"] = "grid",
 ): Promise<ApplyResult> {
+  const user = session.email;
   const titles = await collections.titles();
-  const title = await titles.findOne({ _id: isbn }, { projection: { _id: 1, "plan.compIsbn": 1 } });
+  const title = await titles.findOne({ _id: isbn }, { projection: { _id: 1, "plan.compIsbn": 1, season: 1, division: 1, imprint: 1 } });
   if (!title) throw new HttpError(404, `Title ${isbn} was not found.`);
+  // Locks, maintenance mode and division/imprint limits (enforced here, not only in the UI).
+  await assertCanEditTitle(session, { isbn, season: title.season, division: title.division, imprint: title.imprint });
 
   // Last change per cell wins within one request.
   const byCell = new Map<string, NormalizedChange>();
-  for (const c of input.map((x) => normalizeChange(isbn, x))) byCell.set(`${c.id}|${c.field}`, c);
+  const noteMax = (await getSettings()).rules.salesNoteMaxLength;
+  for (const c of input.map((x) => normalizeChange(isbn, x, noteMax))) byCell.set(`${c.id}|${c.field}`, c);
 
   const estimates = await collections.estimates();
   const ids = [...new Set([...byCell.values()].map((c) => c.id))];
@@ -197,7 +207,7 @@ export async function applyEstimateChanges(
       newValue: c.value,
       changedBy: user,
       changedAt: now,
-      source,
+      source: source === "grid" && c.source === "restore" ? "restore" : source,
       syncedAt: null,
     });
   }
@@ -254,15 +264,19 @@ async function describeConflicts(
 export const planChangeSchema = z
   .object({
     compIsbn: z.string().trim().min(1).nullable().optional(),
-    titleNotes: z.string().max(4000).optional(),
+    titleNotes: z.string().max(20000).optional(),
   })
   .refine((v) => v.compIsbn !== undefined || v.titleNotes !== undefined, "Nothing to change.");
 
 /** Updates title-level fields (comparable title, title notes). */
-export async function applyPlanChange(isbn: string, change: z.infer<typeof planChangeSchema>, user: string) {
+export async function applyPlanChange(isbn: string, change: z.infer<typeof planChangeSchema>, session: Session) {
+  const user = session.email;
   const titles = await collections.titles();
-  const title = await titles.findOne({ _id: isbn }, { projection: { plan: 1 } });
+  const title = await titles.findOne({ _id: isbn }, { projection: { plan: 1, season: 1, division: 1, imprint: 1 } });
   if (!title) throw new HttpError(404, `Title ${isbn} was not found.`);
+  await assertCanEditTitle(session, { isbn, season: title.season, division: title.division, imprint: title.imprint });
+  const titleNoteMax = (await getSettings()).rules.titleNoteMaxLength;
+  if (change.titleNotes !== undefined && change.titleNotes.length > titleNoteMax) throw new HttpError(400, `Title notes can be up to ${titleNoteMax} characters.`);
   if (change.compIsbn) {
     if (change.compIsbn === isbn) throw new HttpError(400, "A title cannot be its own comparable title.");
     const exists = await titles.countDocuments({ _id: change.compIsbn }, { limit: 1 });

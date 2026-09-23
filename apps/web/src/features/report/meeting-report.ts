@@ -1,6 +1,6 @@
 "use client";
 
-import { buildTitleGrid, meetingReportTable, type EstimateRecord, type ReportRow } from "@seg/domain";
+import { buildTitleGrid, meetingReportTable, type DomainConfig, type EstimateRecord, type ReportRow } from "@seg/domain";
 import { fetchTitleDetails } from "@/lib/batch";
 import type { TitleDetail } from "@/lib/queries";
 import { dateStamp, saveBlob } from "@/lib/sheets";
@@ -15,6 +15,7 @@ export async function downloadMeetingReport(
   isbns: string[],
   scope: string,
   onProgress?: (label: string) => void,
+  config?: DomainConfig,
 ): Promise<{ titles: number; pages: number }> {
   const { titles } = await fetchTitleDetails(isbns, (done, total) =>
     onProgress?.(`Loading titles · ${fmtInt(done)} of ${fmtInt(total)}`),
@@ -28,7 +29,7 @@ export async function downloadMeetingReport(
   const M = 32;
   const generated = new Date();
 
-  const sections = titles.map((d) => ({ detail: d, table: meetingReportTable(gridOf(d)) }));
+  const sections = titles.map((d) => ({ detail: d, table: meetingReportTable(gridOf(d, config)) }));
 
   // ---------- Cover ----------
   doc.setFillColor(...INK);
@@ -164,8 +165,8 @@ const MUTED: [number, number, number] = [102, 112, 133];
 const LINE: [number, number, number] = [207, 212, 220];
 const RIGHT = { halign: "right" as const };
 
-function gridOf(d: TitleDetail) {
-  return buildTitleGrid({ facts: d.facts, compFacts: d.compFacts, estimates: d.estimates as EstimateRecord[] });
+function gridOf(d: TitleDetail, config?: DomainConfig) {
+  return buildTitleGrid({ facts: d.facts, compFacts: d.compFacts, estimates: d.estimates as EstimateRecord[], config });
 }
 
 function vsGoal(r: ReportRow) {

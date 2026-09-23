@@ -17,7 +17,7 @@ const FLASH_MS = 4_000;
  * - refreshes comments when someone adds or removes one.
  * Pauses while the tab is hidden.
  */
-export function useLive(isbn: string, editingCell: string | null) {
+export function useLive(isbn: string, editingCell: string | null, enabled = true) {
   const qc = useQueryClient();
   const cursor = useRef<string | null>(null);
   const commentsVersion = useRef<string | null>(null);
@@ -27,6 +27,7 @@ export function useLive(isbn: string, editingCell: string | null) {
   const [remoteCells, setRemoteCells] = useState<Map<string, RemoteChange>>(new Map());
 
   useEffect(() => {
+    if (!enabled) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -108,11 +109,11 @@ export function useLive(isbn: string, editingCell: string | null) {
       if (timer) clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [isbn, qc]);
+  }, [isbn, qc, enabled]);
 
   // Tell others promptly when editing starts or stops.
   useEffect(() => {
-    if (cellRef.current === editingCell) return; // nothing new to announce (e.g. first render)
+    if (!enabled || cellRef.current === editingCell) return; // nothing new to announce (e.g. first render)
     cellRef.current = editingCell;
     const t = setTimeout(() => {
       if (busy.current) return;
@@ -122,7 +123,7 @@ export function useLive(isbn: string, editingCell: string | null) {
       }).catch(() => undefined);
     }, 300);
     return () => clearTimeout(t);
-  }, [editingCell, isbn]);
+  }, [editingCell, isbn, enabled]);
 
   return { viewers, remoteCells };
 }

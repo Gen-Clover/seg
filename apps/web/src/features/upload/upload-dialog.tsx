@@ -61,7 +61,10 @@ export function UploadDialog({ open, onOpenChange }: { open: boolean; onOpenChan
   const save = async (preview: UploadPreview, changes = preview.changes, overwrite = false, savedBefore = 0) => {
     setState({ step: "saving", preview, done: 0, total: changes.length });
     try {
-      const res = await applyUpload(changes, (done, total) => setState({ step: "saving", preview, done, total }), { overwrite });
+      const res = await applyUpload(changes, (done, total) => setState({ step: "saving", preview, done, total }), {
+        overwrite,
+        upload: { id: preview.id, fileName: preview.fileName, rowsRead: preview.rows, errorRows: preview.errors.length },
+      });
       const changed = savedBefore + res.changed;
       setState({ step: "done", preview, changed, failed: res.failed, conflicts: res.conflicts });
       await qc.invalidateQueries({ queryKey: queryKeys.summary });

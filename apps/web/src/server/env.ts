@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { DEFAULT_DOMAIN_CONFIG, type DomainConfig } from "@seg/domain";
 import { loadRootEnv } from "./load-env";
 
 /**
@@ -45,15 +44,4 @@ export function env(): Env {
   }
   cached = parsed.data;
   return cached;
-}
-
-export function domainConfig(): DomainConfig {
-  const e = env();
-  return {
-    ...DEFAULT_DOMAIN_CONFIG,
-    ...(e.ACCOUNT_LEVEL_CHANNELS
-      ? { accountLevelChannels: e.ACCOUNT_LEVEL_CHANNELS.split(",").map((s) => s.trim()).filter(Boolean) }
-      : {}),
-    ...(e.MIN_SEASON_YEAR ? { minSeasonYear: e.MIN_SEASON_YEAR } : {}),
-  };
 }

@@ -58,7 +58,15 @@ MongoDB is therefore a disposable working store: it can be rebuilt from BigQuery
 | `presence` | app (operational) | Who has a title open; heartbeat every 5 s, TTL-expired |
 | `title_visits` | app (operational) | When each person last opened each title ("changed since your last visit") |
 | `trends` | derived | Weekly goal / estimate / 6-month totals per title for the dashboard; recomputed nightly |
-| `job_runs` | jobs | Ingestion / write-back / seed runs |
+| `job_runs` | jobs | Every job run (ingestion, write-back, trends, apply-rules, bulk, demo reset) with duration, counts and error; TTL by retention setting |
+| `app_settings` | admin console | One document (`_id: "app"`): business rules, locks, switches, banners, branding. Defaults = original SEG behaviour. Written back to `SEG_SETTINGS` |
+| `admin_audit` | admin console | Every admin change in readable form |
+| `sessions` | app (operational) | One per sign-in (`jti`); revoking signs that browser out. TTL on expiry |
+| `sign_ins` | app (operational) | Successful and failed sign-ins; TTL by retention setting |
+| `upload_logs` | app | One summary per spreadsheet upload |
+| `chat_reports` | app | Messages reported to admins |
+| `assistant_log` | app (operational) | Typed assistant questions and whether they were understood; TTL |
+| `sync_state` | write-back | Last successful send and last error |
 
 ## Business rules (packages/domain)
 
@@ -111,9 +119,28 @@ MongoDB is therefore a disposable working store: it can be rebuilt from BigQuery
 | **Abrams Assistant** | `POST /api/assistant`: `parseAssistantQuery()` (packages/domain, tested) turns a question into an intent — due soon, below goal, no comparable, changed, mentions, a title / ISBN, its history, a season / division / imprint / format, or a title search — answered from MongoDB with the same rules as My Desk. No AI model; nothing leaves the system. |
 | **No third-party APIs** | Everything runs on the app, MongoDB and BigQuery. Fonts are bundled at build time. Adding any external service (e-mail, AI, push) needs explicit approval. |
 
+## Admin console and settings
+
+- All admin settings live in one `app_settings` document, validated by `settingsSchema()`
+  (`apps/web/src/server/services/settings.ts`). Every default is the legacy behaviour, so an empty
+  document means "original SEG". Settings are cached for 5 s per server instance; browsers get the
+  public part from `GET /api/settings` (server-rendered on first paint, refreshed every minute).
+- Business rules are still implemented in `packages/domain` — the console only supplies the
+  `DomainConfig` values (account-level channels, seasons, formats, division/imprint requirement).
+  Saving rules runs *apply-rules*: `inScope` and totals are recomputed for every title; a new first
+  season year runs the full data refresh because the BigQuery SQL depends on it.
+- Enforcement is on the server: `route()` checks feature switches (404) and maintenance mode for
+  writes (503, admins exempt); `assertCanEditTitle()` checks locks (423, everyone including admins)
+  and division/imprint access (403). The UI mirrors these rules only to explain them.
+- Admin API: one catch-all route, `/api/admin/[...path]`, admin role only. Every change is recorded in
+  `admin_audit`; settings and users are written back to `SEG_SETTINGS` / `SEG_USERS`
+  (never passwords).
+
 ## Security
 
 - Every API route runs through `route()` (`apps/web/src/server/http.ts`): valid session required,
   role checked on the server (viewers cannot write).
-- Sessions are signed (HS256) httpOnly cookies. The proxy only does an optimistic redirect for pages.
+- Sessions are signed (HS256) httpOnly cookies with a session id (`jti`). Each request also checks the
+  `sessions` record, that the user is active, and the user's current role and access (cached 10 s),
+  so deactivating someone or signing them out takes effect at once. The proxy only does an optimistic redirect for pages.
 - Secrets live in environment variables; `.env*`, `.secrets/` and `old/` are git-ignored.

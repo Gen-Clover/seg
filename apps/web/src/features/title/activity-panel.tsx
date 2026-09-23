@@ -85,6 +85,7 @@ export function ActivityPanel({
   onShowRow,
   me,
   canEdit,
+  commentsOn,
   currentValue,
   onRestore,
 }: {
@@ -98,6 +99,7 @@ export function ActivityPanel({
   onShowRow: (t: ThreadTarget) => void;
   me: { email: string; role: string };
   canEdit: boolean;
+  commentsOn: boolean;
   /** The value a history item's cell holds now (to hide pointless restores). */
   currentValue: (item: HistoryItem) => string | number | null | undefined;
   onRestore: (item: HistoryItem) => void;
@@ -107,7 +109,7 @@ export function ActivityPanel({
       {open ? (
         <SheetContent title={tab === "comments" ? "Comments" : "Change history"} description={tab === "comments" ? "Conversations on this title and its rows." : "Every saved change on this title, newest first."}>
           <div className="flex gap-1 border-b border-line px-4 pt-1">
-            {(["comments", "history"] as const).map((t) => (
+            {(commentsOn ? (["comments", "history"] as const) : (["history"] as const)).map((t) => (
               <button
                 key={t}
                 type="button"
@@ -121,7 +123,7 @@ export function ActivityPanel({
               </button>
             ))}
           </div>
-          {tab === "comments" ? (
+          {tab === "comments" && commentsOn ? (
             <CommentsTab isbn={isbn} thread={thread} onThread={onThread} onShowRow={onShowRow} me={me} />
           ) : (
             <HistoryList isbn={isbn} canEdit={canEdit} currentValue={currentValue} onRestore={onRestore} />

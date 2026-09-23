@@ -1,7 +1,7 @@
-import { env } from "@/server/env";
 import { route } from "@/server/http";
+import { getSettings } from "@/server/services/settings";
 
 export const GET = route(async ({ session }) => ({
   user: session,
-  mainMenuUrl: env().MAIN_MENU_URL || null,
+  mainMenuUrl: (await getSettings()).branding.mainMenuUrl || null,
 }));

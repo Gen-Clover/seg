@@ -1,5 +1,8 @@
 import { belowGoal, dueSoon, parseAssistantQuery, withoutComparable, type AssistantIntent, type FacetValues } from "@seg/domain";
+import { randomUUID } from "node:crypto";
 import type { Session } from "../auth/session";
+import { HttpError } from "../http";
+import { getSettings } from "./settings";
 import { collections } from "../db";
 import { listNotifications } from "./comments";
 import { changedByOthers } from "./desk";
@@ -27,10 +30,29 @@ function facetValues(rows: TitleSummaryRow[]): FacetValues {
 }
 
 export async function askAssistant(input: string, session: Session): Promise<AssistantReply & { intent: AssistantIntent["kind"] }> {
+  const settings = await getSettings();
+  if (!settings.assistant.enabled) throw new HttpError(404, "The assistant is turned off by an administrator.");
   const rows = await getSummary();
   const intent = parseAssistantQuery(input, facetValues(rows));
   const byIsbn = new Map(rows.map((t) => [t.isbn, t]));
-  const reply = await answer(intent, session, rows, byIsbn);
+  let reply = await answer(intent, session, rows, byIsbn);
+  if (intent.kind === "help") {
+    reply = { ...reply, text: settings.assistant.greeting.replace("{name}", session.name.split(" ")[0] ?? ""), suggestions: settings.assistant.suggestions };
+  }
+  // Keep typed questions (not the automatic greeting) for the admin "couldn't answer" report.
+  if (input.trim()) {
+    const answered = !(intent.kind === "search" && !(reply.items?.length));
+    const now = new Date();
+    await (await collections.assistantLog()).insertOne({
+      _id: randomUUID(),
+      email: session.email,
+      text: input.trim().slice(0, 300),
+      intent: intent.kind,
+      answered,
+      at: now.toISOString(),
+      expiresAt: new Date(now.getTime() + settings.retention.assistantLogDays * 86_400_000),
+    });
+  }
   return { ...reply, intent: intent.kind };
 }
 

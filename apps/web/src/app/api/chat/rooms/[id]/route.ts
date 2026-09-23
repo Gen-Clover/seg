@@ -5,4 +5,4 @@ import { updateGroup, updateGroupSchema } from "@/server/services/chat";
 export const PATCH = route<{ id: string }>(async ({ request, params, session }) => {
   await updateGroup(decodeURIComponent(params.id), session, await readJson(request, updateGroupSchema));
   return { ok: true };
-});
+}, { write: true, feature: "askAbrams" });

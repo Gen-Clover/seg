@@ -30,7 +30,7 @@ export function NotificationsBell({ collapsed }: { collapsed: boolean }) {
   const go = (n: NotificationView) => {
     setOpen(false);
     if (!n.readAt) read.mutate({ ids: [n._id] });
-    router.push(n.type === "chat_mention" ? `/chat?room=${encodeURIComponent(n.roomId ?? "everyone")}` : `/titles/${n.isbn}?thread=${encodeURIComponent(n.threadKey)}`);
+    router.push(n.type === "chat_mention" || n.type === "chat_dm" ? `/chat?room=${encodeURIComponent(n.roomId ?? "everyone")}` : `/titles/${n.isbn}?thread=${encodeURIComponent(n.threadKey)}`);
   };
 
   return (

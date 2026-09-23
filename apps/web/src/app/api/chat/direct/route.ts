@@ -6,4 +6,4 @@ import { openDirect } from "@/server/services/chat";
 export const POST = route(async ({ request, session }) => {
   const { email } = await readJson(request, z.object({ email: z.string().email() }));
   return { roomId: await openDirect(session, email) };
-});
+}, { write: true, feature: "askAbrams" });

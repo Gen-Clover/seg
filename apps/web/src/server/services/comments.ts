@@ -5,6 +5,7 @@ import { estimateId, normalizeAccount, refForLevel, type AccountRef } from "@seg
 import type { Session } from "../auth/session";
 import { collections } from "../db";
 import { HttpError } from "../http";
+import { getSettings } from "./settings";
 import { scheduleWriteback } from "./writeback";
 
 const refSchema = z.object({
@@ -103,9 +104,10 @@ export async function postComment(isbn: string, session: Session, input: z.infer
     createdAt: now,
     readAt: null,
   });
+  const prefs = (await getSettings()).notifications;
   const notifications = [
-    ...mentioned.map((e) => note(e, "mention")),
-    ...participants.filter((e) => e !== session.email && !mentioned.includes(e)).map((e) => note(e, "reply")),
+    ...(prefs.mentions ? mentioned.map((e) => note(e, "mention")) : []),
+    ...(prefs.replies ? participants.filter((e) => e !== session.email && !mentioned.includes(e)).map((e) => note(e, "reply")) : []),
   ];
   if (notifications.length) await (await collections.notifications()).insertMany(notifications);
 

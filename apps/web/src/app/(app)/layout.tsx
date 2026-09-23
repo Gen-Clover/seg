@@ -1,14 +1,16 @@
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/shell/app-shell";
+import { SettingsProvider } from "@/lib/settings";
 import { currentSession } from "@/server/auth/current";
-import { env } from "@/server/env";
+import { publicSettings } from "@/server/services/settings";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const session = await currentSession();
   if (!session) redirect("/login");
+  const settings = await publicSettings();
   return (
-    <AppShell user={session} mainMenuUrl={env().MAIN_MENU_URL || null}>
-      {children}
-    </AppShell>
+    <SettingsProvider initial={settings}>
+      <AppShell user={session}>{children}</AppShell>
+    </SettingsProvider>
   );
 }

@@ -33,7 +33,8 @@ import { clean, estimateId, normalizeAccount, refForLevel, type Level } from "@s
 import { bigquery, bigQueryConfig } from "../bigquery";
 import { collections, db } from "../db";
 import { refreshTrends } from "./trends";
-import { domainConfig, env } from "../env";
+import { env } from "../env";
+import { domainConfig } from "./settings";
 
 type Row = Record<string, unknown>;
 
@@ -56,6 +57,8 @@ export interface IngestResult {
   restoredChat: number;
   seededUsers: number;
   trendTitles: number;
+  /** First season year the ingestion SQL ran with (re-run needed when the rule changes). */
+  minSeasonYear: number;
   totalsRecomputed: number;
   ms: number;
 }
@@ -70,7 +73,8 @@ export interface IngestResult {
  */
 export async function runIngest(options: { rebuildSql: boolean }): Promise<IngestResult> {
   const started = Date.now();
-  const cfg = bigQueryConfig();
+  const config0 = await domainConfig();
+  const cfg = { ...bigQueryConfig(), minSeasonYear: config0.minSeasonYear };
   const project = `\`${cfg.projectId}.${cfg.appDataset}`;
 
   if (options.rebuildSql) {
@@ -91,7 +95,7 @@ export async function runIngest(options: { rebuildSql: boolean }): Promise<Inges
   }
 
   const now = new Date().toISOString();
-  const config = domainConfig();
+  const config = await domainConfig();
   const statsByIsbn = new Map(statRows.map((s) => [String(s.ISBN), s]));
 
   // 1. Titles: refresh reference fields, keep app-owned plan/totals.
@@ -193,7 +197,7 @@ export async function runIngest(options: { rebuildSql: boolean }): Promise<Inges
       ["viewer@seg-demo.com", "Sam Rivera", "viewer"],
     ];
     for (const [email, name, role] of demo) {
-      await users.insertOne({ _id: email, email, name, role, passwordHash: await hashPassword(demoPassword), active: true, createdAt: now });
+      await users.insertOne({ _id: email, email, name, role, passwordHash: await hashPassword(demoPassword), active: true, createdAt: now, demo: true, syncedAt: null });
     }
     seededUsers = demo.length;
   }
@@ -233,16 +237,10 @@ export async function runIngest(options: { rebuildSql: boolean }): Promise<Inges
     seededUsers,
     totalsRecomputed: totalOps.length,
     trendTitles,
+    minSeasonYear: cfg.minSeasonYear,
     ms: Date.now() - started,
   };
-  await (await collections.jobRuns()).insertOne({
-    _id: `ingest-${now}`,
-    job: "ingest",
-    startedAt: new Date(started).toISOString(),
-    finishedAt: new Date().toISOString(),
-    ok: true,
-    detail: { ...result },
-  });
+  // Recorded by recordJob() (admin "Run now" and the scheduled job alike).
   return result;
 }
 
@@ -250,7 +248,8 @@ export async function runIngest(options: { rebuildSql: boolean }): Promise<Inges
 async function restoreComments(): Promise<number> {
   const comments = await collections.comments();
   if ((await comments.estimatedDocumentCount()) > 0) return 0;
-  const cfg = bigQueryConfig();
+  const config0 = await domainConfig();
+  const cfg = { ...bigQueryConfig(), minSeasonYear: config0.minSeasonYear };
   const [exists] = await bigquery().dataset(cfg.appDataset).table(COMMENTS_TABLE).exists();
   if (!exists) return 0;
   const rows = await query(buildCurrentCommentsSql(cfg));
@@ -283,7 +282,8 @@ async function restoreComments(): Promise<number> {
 async function restoreChat(): Promise<number> {
   const messagesCol = await collections.chatMessages();
   if ((await messagesCol.estimatedDocumentCount()) > 0) return 0;
-  const cfg = bigQueryConfig();
+  const config0 = await domainConfig();
+  const cfg = { ...bigQueryConfig(), minSeasonYear: config0.minSeasonYear };
   const dataset = bigquery().dataset(cfg.appDataset);
   const [[roomsExist], [messagesExist]] = await Promise.all([dataset.table(CHAT_ROOMS_TABLE).exists(), dataset.table(CHAT_MESSAGES_TABLE).exists()]);
   if (!roomsExist || !messagesExist) return 0;

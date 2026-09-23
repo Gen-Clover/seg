@@ -78,6 +78,18 @@ npm run lint
   robot button (bottom-right, Alt+A), with the **Abrams Assistant**: ask about deadlines, gaps, a title,
   an ISBN or a season/division and it answers from SEG's own data (rule-based; no AI service).
 
+- **Admin console** (`/admin`, admins only), grouped by module:
+  - *People and access* — users, roles, deactivate/reactivate, access by division/imprint, sessions
+    (sign out one device or everywhere, session length), demo accounts on/off.
+  - *Planning controls* — season/title locks, **business rules** (switches, checkbox lists and dropdowns
+    of real values, with a "preview the effect" count; defaults are exactly the original SEG rules),
+    My Desk defaults, account catalog, bulk clear/copy with preview.
+  - *Data and jobs* — data refresh with Run now, BigQuery sync health, job history and retention, demo reset.
+  - *Audit and oversight* — activity log with filters and CSV export, upload log, sign-in log, admin changes.
+  - *Ask Abrams and communication* — chat moderation and reports, announcements (banner or post to
+    Everyone), assistant settings and unanswered questions, notification defaults.
+  - *System* — feature switches, maintenance mode (read-only except admins), branding and text, health.
+
 SEG stands for **Seasonal Estimate Grid**. The look follows abramsbooks.com (Abrams red, warm greys);
 no third-party APIs are used.
 

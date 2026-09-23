@@ -1,11 +1,12 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Bot, ExternalLink, Home, LayoutDashboard, LogOut, PanelLeft, Search, SquarePen } from "lucide-react";
+import { Bot, ExternalLink, Home, LayoutDashboard, LogOut, PanelLeft, Search, ShieldCheck, SquarePen } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { Session } from "@/server/auth/session";
 import { api } from "@/lib/api";
+import { useAppSettings } from "@/lib/settings";
 import { cn } from "@/lib/utils";
 import { useLocalPref } from "@/lib/use-local-pref";
 import { useWorklist } from "@/lib/worklist";
@@ -13,24 +14,21 @@ import { BrandMark, BrandName } from "../brand";
 import { Badge, Kbd } from "../ui/misc";
 import { Tooltip } from "../ui/overlay";
 import { AskAbramsDock } from "@/features/ask-abrams/dock";
+import { Banners } from "./banners";
 import { CommandPaletteProvider, useCommandPalette } from "./command-palette";
 import { NotificationsBell } from "./notifications";
 import { ThemeToggle } from "./theme-toggle";
 
-export function AppShell({
-  user,
-  mainMenuUrl,
-  children,
-}: {
-  user: Session;
-  mainMenuUrl: string | null;
-  children: React.ReactNode;
-}) {
+export function AppShell({ user, children }: { user: Session; children: React.ReactNode }) {
+  const mainMenuUrl = useAppSettings().branding.mainMenuUrl || null;
   return (
     <CommandPaletteProvider>
       <div className="flex h-screen overflow-hidden">
         <Sidebar user={user} mainMenuUrl={mainMenuUrl} />
-        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">{children}</main>
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <Banners isAdmin={user.role === "admin"} />
+          {children}
+        </main>
       </div>
       <AskAbramsDock />
     </CommandPaletteProvider>
@@ -44,12 +42,15 @@ function Sidebar({ user, mainMenuUrl }: { user: Session; mainMenuUrl: string | n
   const router = useRouter();
   const palette = useCommandPalette();
   const worklist = useWorklist();
+  const settings = useAppSettings();
+  const askAbrams = settings.features.askAbrams;
 
   const toggle = () => setSidebarPref(collapsed ? "expanded" : "collapsed");
 
   const lastTitle = worklist?.isbns[0];
   // Unread team chat messages (cheap count, every 20 s while the tab is visible).
   const chatUnread = useQuery({
+    enabled: askAbrams,
     queryKey: ["chat", "unread"],
     queryFn: () => api<{ unread: number }>("/api/chat/unread"),
     refetchInterval: 20_000,
@@ -64,7 +65,8 @@ function Sidebar({ user, mainMenuUrl }: { user: Session; mainMenuUrl: string | n
       icon: SquarePen,
       active: pathname.startsWith("/titles"),
     },
-    { href: "/chat", label: "Ask Abrams", icon: Bot, active: pathname === "/chat", badge: chatUnread.data?.unread ?? 0 },
+    ...(askAbrams ? [{ href: "/chat", label: "Ask Abrams", icon: Bot, active: pathname === "/chat", badge: chatUnread.data?.unread ?? 0 }] : []),
+    ...(user.role === "admin" ? [{ href: "/admin", label: "Admin console", icon: ShieldCheck, active: pathname.startsWith("/admin") }] : []),
   ];
 
   const signOut = async () => {
@@ -82,7 +84,7 @@ function Sidebar({ user, mainMenuUrl }: { user: Session; mainMenuUrl: string | n
     >
       <div className={cn("flex h-14 items-center gap-2.5 px-3.5", collapsed && "justify-center px-0")}>
         <BrandMark className="size-7" />
-        {collapsed ? null : <BrandName />}
+        {collapsed ? null : <BrandName name={settings.branding.appName} subtitle={settings.branding.subtitle} />}
       </div>
 
       <div className="px-2.5">

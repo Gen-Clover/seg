@@ -23,6 +23,7 @@ import {
 } from "./filters";
 import { SummaryActions } from "./summary-actions";
 import { SummaryTable } from "./summary-table";
+import { useAppSettings } from "@/lib/settings";
 import { useLocalPref } from "@/lib/use-local-pref";
 
 // Loaded only when the dashboard is opened.
@@ -73,7 +74,9 @@ export function SummaryView() {
     update({ ...filters, q: "", facets: Object.fromEntries(FACETS.map((f) => [f.key, []])) as unknown as SummaryFilters["facets"] });
   };
   const active = activeFilterCount(filters);
-  const [view, setView] = useLocalPref("seg-summary-view", "table");
+  const [viewPref, setView] = useLocalPref("seg-summary-view", "table");
+  const dashboardOn = useAppSettings().features.dashboard;
+  const view = dashboardOn ? viewPref : "table";
 
   return (
     <div className={cn("flex min-h-0 flex-1 flex-col gap-4 p-5 lg:p-6", view === "dashboard" && "overflow-y-auto")}>
@@ -86,6 +89,7 @@ export function SummaryView() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {dashboardOn ? (
           <div className="flex h-8 items-center rounded-lg border border-line-strong bg-surface p-0.5 text-xs shadow-sm" role="tablist" aria-label="View">
             {([
               ["table", "Table", Table2],
@@ -104,6 +108,7 @@ export function SummaryView() {
               </button>
             ))}
           </div>
+          ) : null}
           <SummaryActions rows={rows} filters={filters} disabled={!summary.data} />
         </div>
       </header>

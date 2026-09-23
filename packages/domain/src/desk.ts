@@ -71,12 +71,16 @@ export function dueSoon(titles: readonly DeskTitle[], today: string, windowDays:
   return items.sort((a, b) => a.daysLeft - b.daysLeft || a.isbn.localeCompare(b.isbn));
 }
 
-/** Titles whose laydown estimate is below the laydown goal, biggest gap first. */
-export function belowGoal(titles: readonly DeskTitle[]): GapItem[] {
+/**
+ * Titles whose laydown estimate is below the laydown goal, biggest gap first.
+ * `thresholdPct` ignores small gaps (e.g. 5 = only titles more than 5% short); 0 = any gap.
+ */
+export function belowGoal(titles: readonly DeskTitle[], thresholdPct = 0): GapItem[] {
   const items: GapItem[] = [];
   for (const t of titles) {
     const { laydownGoal: goal, laydownEstimate: est } = t.totals;
     if (goal === null || est === null || est >= goal) continue;
+    if (thresholdPct > 0 && goal > 0 && (goal - est) / goal <= thresholdPct / 100) continue;
     items.push({ isbn: t.isbn, gap: goal - est, ratio: goal > 0 ? est / goal : 0 });
   }
   return items.sort((a, b) => b.gap - a.gap || a.isbn.localeCompare(b.isbn));

@@ -2,6 +2,7 @@ import type { EstimateDoc, TitleAccountFactDoc, TitleDoc } from "@seg/data";
 import type { AccountFact, CompAccountFact } from "@seg/domain";
 import { collections } from "../db";
 import { HttpError } from "../http";
+import { getSettings } from "./settings";
 
 /** One row of the summary page. Kept small: the whole in-scope catalog is sent at once. */
 export interface TitleSummaryRow {
@@ -189,12 +190,14 @@ export async function searchTitles(query: string, limit = 20): Promise<TitleSear
   const q = query.trim().toLowerCase();
   if (!q) return [];
   const titles = await collections.titles();
+  const rules = (await getSettings()).rules;
+  const words = rules.compExcludedFormatWords.map(escapeRegex).join("|");
   const docs = await titles
     .find(
       {
         search: { $regex: escapeRegex(q) },
-        ipmFormat: { $ne: "EB" },
-        format: { $not: /catalog|display/i },
+        ...(rules.compExcludedIpmFormats.length ? { ipmFormat: { $nin: rules.compExcludedIpmFormats } } : {}),
+        ...(words ? { format: { $not: new RegExp(words, "i") } } : {}),
       },
       { projection: { _id: 0, isbn: 1, title: 1, author: 1, season: 1, format: 1 } },
     )

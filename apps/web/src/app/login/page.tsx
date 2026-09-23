@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { BrandMark, BrandName } from "@/components/brand";
 import { ThemeToggle } from "@/components/shell/theme-toggle";
 import { env } from "@/server/env";
+import { getSettings } from "@/server/services/settings";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Sign in" };
@@ -18,7 +19,10 @@ export default async function LoginPage() {
   // Rendered per request: reads server configuration, which is not available at build time.
   await connection();
   const e = env();
-  const demoPassword = e.AUTH_PROVIDER === "credentials" ? e.DEMO_PASSWORD ?? null : null;
+  const { branding, demo } = await getSettings();
+  // The demo account list and password hint can be hidden from the admin console.
+  const demoPassword = e.AUTH_PROVIDER === "credentials" && demo.allowDemoLogins && demo.showOnLogin ? (e.DEMO_PASSWORD ?? null) : null;
+  const classicHeadline = branding.loginHeadline === "Seasonal Estimate Grid";
   return (
     <main className="relative grid min-h-screen lg:grid-cols-[1.05fr_1fr]">
       <div className="absolute right-4 top-4 z-10">
@@ -35,18 +39,21 @@ export default async function LoginPage() {
         />
         <div className="relative flex items-center gap-3">
           <BrandMark className="size-10" />
-          <BrandName inverted />
+          <BrandName inverted name={branding.appName} subtitle={branding.subtitle} />
         </div>
 
         <div className="relative max-w-lg">
           <p className="mb-4 text-xs font-semibold uppercase tracking-[0.2em] text-white/55">Abrams · Sales planning</p>
           <h1 className="font-display text-[40px] font-semibold leading-[1.08]">
-            <span className="text-[#ff4b53]">S</span>easonal <span className="text-[#ff4b53]">E</span>stimate <span className="text-[#ff4b53]">G</span>rid
+            {classicHeadline ? (
+              <>
+                <span className="text-[#ff4b53]">S</span>easonal <span className="text-[#ff4b53]">E</span>stimate <span className="text-[#ff4b53]">G</span>rid
+              </>
+            ) : (
+              branding.loginHeadline
+            )}
           </h1>
-          <p className="mt-5 text-[15px] leading-relaxed text-white/72">
-            Plan every launch with the numbers in one place — initial orders, comparable titles and laydown estimates for every
-            channel, organization and account, updated live as your team works.
-          </p>
+          {branding.loginText ? <p className="mt-5 text-[15px] leading-relaxed text-white/72">{branding.loginText}</p> : null}
           <dl className="mt-10 grid grid-cols-3 gap-6 border-t border-white/12 pt-6">
             {FEATURES.map(([a, b]) => (
               <div key={a}>
@@ -63,10 +70,10 @@ export default async function LoginPage() {
         <div className="w-full max-w-[380px]">
           <div className="mb-8 flex items-center gap-3 lg:hidden">
             <BrandMark />
-            <BrandName />
+            <BrandName name={branding.appName} subtitle={branding.subtitle} />
           </div>
           <h2 className="text-2xl font-semibold">Welcome back</h2>
-          <p className="mt-1 text-[13px] text-muted">Sign in to continue to the Seasonal Estimate Grid.</p>
+          <p className="mt-1 text-[13px] text-muted">Sign in to continue to {branding.subtitle ? `the ${branding.subtitle}` : branding.appName}.</p>
           <Suspense>
             <LoginForm demoPassword={demoPassword} />
           </Suspense>

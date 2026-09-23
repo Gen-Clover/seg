@@ -151,7 +151,7 @@ await db.collection<UserDoc>(COLLECTIONS.users).bulkWrite(userOps);
 console.log(`  ${COLLECTIONS.users.padEnd(22)} ${userDocs.length} demo users (password from DEMO_PASSWORD)`);
 
 // Collaboration data refers to the old titles: start empty, with indexes in place.
-for (const name of [COLLECTIONS.comments, COLLECTIONS.notifications, COLLECTIONS.presence, COLLECTIONS.titleVisits, COLLECTIONS.trends, COLLECTIONS.chatRooms, COLLECTIONS.chatMessages, COLLECTIONS.chatReads]) {
+for (const name of [COLLECTIONS.comments, COLLECTIONS.notifications, COLLECTIONS.presence, COLLECTIONS.titleVisits, COLLECTIONS.trends, COLLECTIONS.chatRooms, COLLECTIONS.chatMessages, COLLECTIONS.chatReads, COLLECTIONS.chatReports, COLLECTIONS.assistantLog]) {
   await db.collection(name).drop().catch(() => undefined);
   for (const idx of INDEXES[name] ?? []) await db.collection(name).createIndex(idx.key, indexOptions(idx));
 }

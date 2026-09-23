@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/misc";
 import { Popover, PopoverAnchor, PopoverContent, Tooltip } from "@/components/ui/overlay";
 import { clockTime } from "@/lib/people";
 import { usePersonName } from "@/lib/queries";
+import { useAppSettings } from "@/lib/settings";
 import { cn, fmtInt } from "@/lib/utils";
 import {
   GRID_COLS,
@@ -116,6 +117,7 @@ export const EstimatesGrid = forwardRef<EstimatesGridHandle, Props>(function Est
 ) {
   const rows = useMemo(() => flattenGrid(grid, expanded, filter), [grid, expanded, filter]);
   const nameOf = usePersonName();
+  const salesNoteMax = useAppSettings().rules.salesNoteMaxLength;
   const scrollRef = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState<Active>({ r: 0, c: 2 });
   const [editing, setEditing] = useState<{ draft: string } | null>(null);
@@ -390,6 +392,7 @@ export const EstimatesGrid = forwardRef<EstimatesGridHandle, Props>(function Est
                   ref={inputRef}
                   value={editing.draft}
                   inputMode={col.kind === "estimate" ? "numeric" : "text"}
+                  maxLength={col.kind === "notes" ? salesNoteMax : undefined}
                   onChange={(e) => setEditing({ draft: col.kind === "estimate" ? e.target.value.replace(/[^0-9,]/g, "") : e.target.value })}
                   onBlur={() => commit(editing.draft)}
                   onKeyDown={(e) => {

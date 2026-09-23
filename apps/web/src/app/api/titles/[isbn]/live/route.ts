@@ -11,4 +11,4 @@ const bodySchema = z.object({
 export const POST = route<{ isbn: string }>(async ({ request, params, session }) => {
   const { cursor, cell } = await readJson(request, bodySchema);
   return liveTick(params.isbn, session, cursor, cell);
-});
+}, { feature: "liveTeamwork" });

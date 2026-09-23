@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { signInWithPassword } from "@/server/auth/credentials";
+import { logSignIn, signInWithPassword } from "@/server/auth/credentials";
 import { startSession } from "@/server/auth/current";
 import { env } from "@/server/env";
 import { errorResponse, HttpError, readJson } from "@/server/http";
@@ -11,10 +11,14 @@ export async function POST(request: Request) {
   try {
     if (env().AUTH_PROVIDER !== "credentials") throw new HttpError(404, "Password sign-in is disabled.");
     const { email, password } = await readJson(request, schema);
-    const session = await signInWithPassword(email, password);
-    if (!session) throw new HttpError(401, "That email and password don't match.");
-    await startSession(session);
-    return NextResponse.json({ user: session });
+    const result = await signInWithPassword(email, password);
+    if ("reason" in result) {
+      await logSignIn(email, false, result.reason);
+      throw new HttpError(401, "That email and password don't match.");
+    }
+    await startSession(result.user);
+    await logSignIn(email, true, null);
+    return NextResponse.json({ user: result.user });
   } catch (err) {
     return errorResponse(err);
   }

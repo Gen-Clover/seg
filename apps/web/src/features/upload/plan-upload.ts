@@ -31,6 +31,8 @@ export interface PreviewChange {
 }
 
 export interface UploadPreview {
+  /** Identifies this upload in the admin upload log (all its save batches). */
+  id: string;
   fileName: string;
   sheets: number;
   rows: number;
@@ -67,7 +69,7 @@ export async function previewUpload(file: File, onStage: (s: Stage) => void): Pr
     rows.push(...sheet.rows);
   }
   if (!rows.length) {
-    return { fileName: file.name, sheets: book.sheets.length, rows: 0, changes: [], titles: 0, changedRows: 0, unchangedRows: 0, errors };
+    return { id: crypto.randomUUID(), fileName: file.name, sheets: book.sheets.length, rows: 0, changes: [], titles: 0, changedRows: 0, unchangedRows: 0, errors };
   }
 
   const isbns = [...new Set(rows.map((r) => clean(r.cells[SHEET_COLUMNS.isbn])).filter((i): i is string => !!i))];
@@ -118,6 +120,7 @@ export async function previewUpload(file: File, onStage: (s: Stage) => void): Pr
   }
 
   return {
+    id: crypto.randomUUID(),
     fileName: file.name,
     sheets: book.sheets.length,
     rows: rows.length,
@@ -182,7 +185,7 @@ export interface ApplyUploadResult {
 export async function applyUpload(
   changes: PreviewChange[],
   onProgress: (done: number, total: number) => void,
-  options: { overwrite?: boolean } = {},
+  options: { overwrite?: boolean; upload?: { id: string; fileName: string; rowsRead: number; errorRows: number } } = {},
 ): Promise<ApplyUploadResult> {
   const sorted = [...changes].sort((a, b) => a.isbn.localeCompare(b.isbn));
   const batches: PreviewChange[][] = [];
@@ -217,6 +220,7 @@ export async function applyUpload(
           value: c.after,
           ...(options.overwrite ? {} : { expected: c.before }),
         })),
+        ...(options.upload ? { upload: { ...options.upload, overwrite: !!options.overwrite } } : {}),
       },
     });
     changed += res.changed;

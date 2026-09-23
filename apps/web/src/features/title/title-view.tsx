@@ -15,11 +15,14 @@ import {
   Eye,
   History,
   Keyboard,
+  Lock,
   MessageSquare,
   Redo2,
   Share2,
+  ShieldAlert,
   Search,
   Undo2,
+  Wrench,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -44,6 +47,8 @@ import { Badge, Card, Input, Kbd, Skeleton, Spinner, Textarea } from "@/componen
 import { Popover, PopoverContent, PopoverTrigger, Tooltip } from "@/components/ui/overlay";
 import { api } from "@/lib/api";
 import { initials, personColor } from "@/lib/people";
+import { editBlock, useAppSettings, useDomainConfig } from "@/lib/settings";
+import type { Session } from "@/server/auth/session";
 import { queryKeys, useComments, useMe, usePrefetchTitle, useSummary, useTitle, type TitleDetail } from "@/lib/queries";
 import type { Viewer } from "@/server/services/live";
 import { cn, fmtDate, fmtInt, fmtMoney, fmtSigned, timeAgo } from "@/lib/utils";
@@ -79,9 +84,15 @@ const FIELD_NAME: Record<string, string> = {
   titleNotes: "Title notes",
 };
 
-export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean }) {
+export function TitleView({ isbn, user }: { isbn: string; user: Pick<Session, "role" | "scope"> }) {
   const detail = useTitle(isbn);
   const qc = useQueryClient();
+  const settings = useAppSettings();
+  const config = useDomainConfig();
+  const t0 = detail.data?.title;
+  // Viewer role, maintenance mode, a season/title lock or division/imprint access make the title read-only.
+  const block = editBlock(user, settings, { isbn, season: t0?.season ?? null, division: t0?.division ?? null, imprint: t0?.imprint ?? null });
+  const canEdit = !block;
   const autosave = useAutosave(isbn, canEdit);
   const gridRef = useRef<EstimatesGridHandle>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -90,8 +101,8 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
   const [highlight, setHighlight] = useState<string | null>(null);
   const me = useMe().data?.user ?? null;
   const [editingCell, setEditingCell] = useState<string | null>(null);
-  const live = useLive(isbn, editingCell);
-  const comments = useComments(isbn);
+  const live = useLive(isbn, editingCell, settings.features.liveTeamwork);
+  const comments = useComments(isbn, settings.features.comments);
   const [panel, setPanel] = useState<{ open: boolean; tab: PanelTab; thread: ThreadTarget | null }>({ open: false, tab: "comments", thread: null });
   const [focusKey, setFocusKey] = useState<string | null>(null);
 
@@ -117,8 +128,8 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
   const grid = useMemo(() => {
     if (!data) return null;
     const drafts: AccountFact[] = draftAccounts.map((r) => ({ ...r, initialOrder: 0 }));
-    return buildTitleGrid({ facts: [...data.facts, ...drafts], compFacts: data.compFacts, estimates });
-  }, [data, estimates, draftAccounts]);
+    return buildTitleGrid({ facts: [...data.facts, ...drafts], compFacts: data.compFacts, estimates, config });
+  }, [data, estimates, draftAccounts, config]);
   const totals = useMemo(() => (grid ? titleTotals(grid) : null), [grid]);
 
   const focusedRef = useRef<string | null>(null);
@@ -145,10 +156,10 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
   const replay = useCallback((cell: UndoCell, value: CellValue) => edit(cell.level, cell.ref, cell.field, value), [edit]);
   const { record, undo, redo, canUndo, canRedo } = useUndo(replay);
   const change = useCallback(
-    (level: Level, ref: AccountRef, field: EstimateField, value: CellValue) => {
+    (level: Level, ref: AccountRef, field: EstimateField, value: CellValue, source: "grid" | "restore" = "grid") => {
       const r = refForLevel(level, ref);
       record({ level, ref: r, field, before: currentOwn(level, r, field), after: value });
-      edit(level, r, field, value);
+      edit(level, r, field, value, source);
     },
     [record, edit, currentOwn],
   );
@@ -230,7 +241,7 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
       if (item.field === "compIsbn") plan.mutate({ compIsbn: item.oldValue === null ? null : String(item.oldValue) });
       else plan.mutate({ titleNotes: String(item.oldValue ?? "") });
     } else {
-      change(item.level, refOfItem(item), item.field as EstimateField, item.oldValue);
+      change(item.level, refOfItem(item), item.field as EstimateField, item.oldValue, "restore");
     }
     toast.success(`${FIELD_NAME[item.field] ?? item.field} restored to ${item.oldValue === null || item.oldValue === "" ? "blank" : typeof item.oldValue === "number" ? fmtInt(item.oldValue) : item.oldValue}`);
   };
@@ -260,7 +271,7 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
     if (!grid) return;
     const key = accountKey(ref);
     const channel = grid.channels.find((c) => c.orgs.some((o) => o.accounts.some((a) => a.key === key)));
-    const accountLevel = isAccountLevelChannel(ref.channelId);
+    const accountLevel = isAccountLevelChannel(ref.channelId, config);
     if (!channel) setDraftAccounts((d) => [...d, ref]);
     // Expand the path and focus the row once it renders.
     setTimeout(() => {
@@ -308,11 +319,14 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
         status={autosave.status}
         lastSavedAt={autosave.lastSavedAt}
         canEdit={canEdit}
+        readOnlyReason={block?.kind === "lock" ? "Locked" : block?.kind === "maintenance" ? "Maintenance" : null}
         titleName={data?.title.title ?? null}
         viewers={live.viewers}
         commentCount={comments.data?.comments.length ?? 0}
+        commentsOn={settings.features.comments}
         onPanel={(tab) => setPanel({ open: true, tab, thread: null })}
       />
+      {block && block.kind !== "viewer" ? <ReadOnlyBanner kind={block.kind} message={block.message} /> : null}
       {!data || !grid || !totals ? (
         <TitleSkeleton />
       ) : (
@@ -420,6 +434,7 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
         onShowRow={showRow}
         me={{ email: me?.email ?? "", role: me?.role ?? "viewer" }}
         canEdit={canEdit}
+        commentsOn={settings.features.comments}
         currentValue={currentValue}
         onRestore={restore}
       />
@@ -488,18 +503,22 @@ function TopBar({
   status,
   lastSavedAt,
   canEdit,
+  readOnlyReason,
   titleName,
   viewers,
   commentCount,
+  commentsOn,
   onPanel,
 }: {
   isbn: string;
   status: SaveStatus;
   lastSavedAt: number | null;
   canEdit: boolean;
+  readOnlyReason: string | null;
   titleName: string | null;
   viewers: Viewer[];
   commentCount: number;
+  commentsOn: boolean;
   onPanel: (tab: PanelTab) => void;
 }) {
   const router = useRouter();
@@ -577,11 +596,13 @@ function TopBar({
       </div>
       <div className="ml-auto flex items-center gap-2">
         <Presence viewers={viewers} />
-        <Button variant="ghost" size="sm" onClick={() => onPanel("comments")}>
-          <MessageSquare />
-          Comments
-          {commentCount ? <span className="num rounded-full bg-info-soft px-1.5 text-[11px] font-semibold text-info">{commentCount}</span> : null}
-        </Button>
+        {commentsOn ? (
+          <Button variant="ghost" size="sm" onClick={() => onPanel("comments")}>
+            <MessageSquare />
+            Comments
+            {commentCount ? <span className="num rounded-full bg-info-soft px-1.5 text-[11px] font-semibold text-info">{commentCount}</span> : null}
+          </Button>
+        ) : null}
         <Button variant="ghost" size="sm" onClick={() => onPanel("history")}>
           <History />
           History
@@ -595,7 +616,7 @@ function TopBar({
           </Tooltip>
         ) : null}
         <span className="mx-1 h-5 w-px bg-line" />
-        {canEdit ? <SaveIndicator status={status} lastSavedAt={lastSavedAt} /> : <ReadOnlyBadge />}
+        {canEdit ? <SaveIndicator status={status} lastSavedAt={lastSavedAt} /> : <ReadOnlyBadge reason={readOnlyReason} />}
       </div>
     </div>
   );
@@ -628,12 +649,26 @@ function Presence({ viewers }: { viewers: Viewer[] }) {
   );
 }
 
-function ReadOnlyBadge() {
+function ReadOnlyBadge({ reason }: { reason: string | null }) {
   return (
-    <Badge className="gap-1.5 py-1">
-      <Eye className="size-3.5" />
-      View only
+    <Badge tone={reason ? "warn" : "neutral"} className="gap-1.5 py-1">
+      {reason === "Locked" ? <Lock className="size-3.5" /> : <Eye className="size-3.5" />}
+      {reason ?? "View only"}
     </Badge>
+  );
+}
+
+/** Why this title can't be changed right now (lock, maintenance, access limit). */
+function ReadOnlyBanner({ kind, message }: { kind: "maintenance" | "lock" | "scope"; message: string }) {
+  const Icon = kind === "lock" ? Lock : kind === "maintenance" ? Wrench : ShieldAlert;
+  const lead = kind === "lock" ? "This title is locked." : kind === "maintenance" ? "Read-only for maintenance." : "View only for you.";
+  return (
+    <div role="status" data-testid="read-only-banner" className="mx-5 mt-3 flex items-start gap-2.5 rounded-xl border border-warn/30 bg-warn-soft px-3.5 py-2.5 text-[13px] text-ink lg:mx-6">
+      <Icon className="mt-0.5 size-4 shrink-0 text-warn" />
+      <p>
+        <span className="font-semibold">{lead}</span> {message}
+      </p>
+    </div>
   );
 }
 
@@ -731,7 +766,6 @@ function Kpi({ label, value, hint, tone }: { label: string; value: string; hint?
   );
 }
 
-const NOTES_LIMIT = 4000;
 
 function DetailsCard({
   data,
@@ -747,6 +781,7 @@ function DetailsCard({
   notesSavedAt: number | null;
 }) {
   const t = data.title;
+  const notesLimit = useAppSettings().rules.titleNoteMaxLength;
   const [notes, setNotes] = useState(t.plan.titleNotes);
   const [sent, setSent] = useState(t.plan.titleNotes);
   useEffect(() => {
@@ -826,15 +861,15 @@ function DetailsCard({
         <Textarea
           id="title-notes"
           value={notes}
-          maxLength={NOTES_LIMIT}
+          maxLength={notesLimit}
           onChange={(e) => setNotes(e.target.value)}
           readOnly={!canEdit}
           placeholder={canEdit ? "Add a note for the whole title… (saved automatically)" : "No notes"}
           className="field-sizing-content max-h-64 min-h-20 focus:border-info/60 focus:ring-info/15"
         />
         {canEdit ? (
-          <div className={cn("mt-1 text-right text-[11px]", notes.length > NOTES_LIMIT * 0.9 ? "text-warn" : "text-subtle")}>
-            {fmtInt(notes.length)} / {fmtInt(NOTES_LIMIT)}
+          <div className={cn("mt-1 text-right text-[11px]", notes.length > notesLimit * 0.9 ? "text-warn" : "text-subtle")}>
+            {fmtInt(notes.length)} / {fmtInt(notesLimit)}
           </div>
         ) : null}
       </div>

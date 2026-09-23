@@ -103,8 +103,9 @@ export function useUsers(enabled = true) {
   });
 }
 
-export function useComments(isbn: string) {
+export function useComments(isbn: string, enabled = true) {
   return useQuery({
+    enabled,
     queryKey: queryKeys.comments(isbn),
     queryFn: () => api<{ comments: CommentView[] }>(`/api/titles/${encodeURIComponent(isbn)}/comments`),
     staleTime: 30_000,

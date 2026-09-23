@@ -1,7 +1,7 @@
 import { computeTitleTotals } from "@seg/data";
 import type { TitleTotals } from "@seg/domain";
 import { collections } from "../db";
-import { domainConfig } from "../env";
+import { domainConfig } from "./settings";
 
 /** Recomputes and stores a title's summary totals (after edits, uploads or ingestion). */
 export async function refreshTitleTotals(isbn: string, compIsbn?: string | null): Promise<TitleTotals> {
@@ -16,7 +16,7 @@ export async function refreshTitleTotals(isbn: string, compIsbn?: string | null)
     comp ? facts.find({ isbn: comp, inCompList: true }).toArray() : null,
     estimates.find({ isbn }).toArray(),
   ]);
-  const totals = computeTitleTotals(ownFacts, compFacts, estimateDocs, domainConfig());
+  const totals = computeTitleTotals(ownFacts, compFacts, estimateDocs, await domainConfig());
   await titles.updateOne({ _id: isbn }, { $set: { totals } });
   return totals;
 }

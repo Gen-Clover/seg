@@ -2,7 +2,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, AtSign, MessageSquare, Send, Trash2 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { AccountRef } from "@seg/domain";
 import { Button } from "@/components/ui/button";
@@ -274,6 +274,14 @@ function Composer({ isbn, target, people }: { isbn: string; target: ThreadTarget
   const [picked, setPicked] = useState<Map<string, string>>(new Map());
   const [query, setQuery] = useState<string | null>(null);
   const [highlight, setHighlight] = useState(0);
+  // Where to put the caret after inserting a mention (applied before the next keystroke can land).
+  const caret = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (caret.current === null || !input.current) return;
+    input.current.focus();
+    input.current.setSelectionRange(caret.current, caret.current);
+    caret.current = null;
+  }, [text]);
 
   const matches = useMemo(() => {
     if (query === null) return [];
@@ -306,16 +314,13 @@ function Composer({ isbn, target, people }: { isbn: string; target: ThreadTarget
 
   const choose = (p: Person) => {
     const el = input.current;
-    const caret = el?.selectionStart ?? text.length;
-    const before = text.slice(0, caret).replace(/@([\w.\-]*)$/, `@${p.name} `);
-    const next = before + text.slice(caret);
+    const at = el?.selectionStart ?? text.length;
+    const before = text.slice(0, at).replace(/@([\w.\-]*)$/, `@${p.name} `);
+    const next = before + text.slice(at);
     setText(next);
     setPicked((m) => new Map(m).set(p.email, p.name));
     setQuery(null);
-    requestAnimationFrame(() => {
-      el?.focus();
-      el?.setSelectionRange(before.length, before.length);
-    });
+    caret.current = before.length;
   };
 
   const send = () => {

@@ -139,7 +139,7 @@ export function DeskView({ name }: { name: string }) {
   // Tab order: the person's saved order, then any tabs they haven't placed yet, in the default order.
   const defaultTabs: DeskTab[] = [
     ...kpis.map((k) => ({ id: k.tab, label: k.label, count: k.value })),
-    ...groups.map((g) => ({ id: `g:${g.id}`, label: g.name, count: groupLists.get(`g:${g.id}`)?.length ?? 0, group: true })),
+    ...groups.map((g) => ({ id: `g:${g.id}`, label: g.name, count: loading ? null : (groupLists.get(`g:${g.id}`)?.length ?? 0), group: true })),
   ];
   const savedOrder = order ?? desk.data?.tabOrder ?? [];
   const rank = new Map(savedOrder.map((id, i) => [id, i]));

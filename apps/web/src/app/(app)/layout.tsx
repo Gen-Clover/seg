@@ -6,7 +6,7 @@ import { publicSettings } from "@/server/services/settings";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const session = await currentSession();
-  if (!session) redirect("/login");
+  if (!session) redirect("/api/auth/expired");
   const settings = await publicSettings();
   return (
     <SettingsProvider initial={settings}>

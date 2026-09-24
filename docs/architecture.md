@@ -132,6 +132,10 @@ MongoDB is therefore a disposable working store: it can be rebuilt from BigQuery
 - Enforcement is on the server: `route()` checks feature switches (404) and maintenance mode for
   writes (503, admins exempt); `assertCanEditTitle()` checks locks (423, everyone including admins)
   and division/imprint access (403). The UI mirrors these rules only to explain them.
+- Division/imprint access: everyone sees every title ("*") unless an admin restricts them. A restricted
+  person (any role) only sees and changes titles in their divisions/imprints: `server/auth/scope.ts` filters
+  the summary, title detail, batch/export, search, dashboard data, My Desk, the assistant, comments, history
+  and live teamwork. A comparable title's figures stay visible on titles they can open.
 - Admin API: one catch-all route, `/api/admin/[...path]`, admin role only. Every change is recorded in
   `admin_audit`; settings and users are written back to `SEG_SETTINGS` / `SEG_USERS`
   (never passwords).

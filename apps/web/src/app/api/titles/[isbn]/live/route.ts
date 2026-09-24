@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { assertCanSeeTitle } from "@/server/auth/scope";
 import { readJson, route } from "@/server/http";
 import { liveTick } from "@/server/services/live";
 
@@ -9,6 +10,7 @@ const bodySchema = z.object({
 
 /** Heartbeat while a title is open: presence, visit, and other people's saved changes. */
 export const POST = route<{ isbn: string }>(async ({ request, params, session }) => {
+  await assertCanSeeTitle(session, params.isbn);
   const { cursor, cell } = await readJson(request, bodySchema);
   return liveTick(params.isbn, session, cursor, cell);
 }, { feature: "liveTeamwork" });

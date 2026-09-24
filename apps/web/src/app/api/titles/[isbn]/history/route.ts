@@ -1,6 +1,7 @@
 import type { Filter } from "mongodb";
 import type { EstimateEventDoc } from "@seg/data";
 import { collections } from "@/server/db";
+import { assertCanSeeTitle } from "@/server/auth/scope";
 import { route } from "@/server/http";
 
 const PAGE = 100;
@@ -10,7 +11,8 @@ const PAGE = 100;
  * Paged: pass the previous page's `next` cursor as `before` to load older changes.
  * The cursor includes the event id because one save writes many events with the same timestamp.
  */
-export const GET = route<{ isbn: string }>(async ({ request, params }) => {
+export const GET = route<{ isbn: string }>(async ({ request, params, session }) => {
+  await assertCanSeeTitle(session, params.isbn);
   const url = new URL(request.url);
   const estimateId = url.searchParams.get("estimateId");
   const before = url.searchParams.get("before");

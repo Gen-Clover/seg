@@ -169,7 +169,7 @@ export function UsersPage() {
                   ) : u.scope.divisions.length || u.scope.imprints.length ? (
                     [...u.scope.divisions, ...u.scope.imprints].join(", ")
                   ) : (
-                    <span className="text-muted">All divisions and imprints</span>
+                    <span className="text-muted">* All</span>
                   )}
                 </td>
                 <td className="text-xs">
@@ -325,82 +325,183 @@ function AddUserDialog({
 
 /* ---------------- Access by division / imprint ---------------- */
 
+const ALL = "* All";
+
+function AccessChips({ values, all }: { values: string[]; all: string }) {
+  if (!values.length) return <span className="text-[12.5px] text-muted">{all}</span>;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {values.map((v) => (
+        <Badge key={v} tone="warn">
+          {v}
+        </Badge>
+      ))}
+    </div>
+  );
+}
+
 export function AccessPage() {
   const users = useUsersList();
   const options = useAdmin<Options>("rules/options");
+  const [editing, setEditing] = useState<{ email: string; divisions: string[]; imprints: string[] } | null>(null);
   const save = useAdminAction(
     ({ email, scope }: { email: string; scope: { divisions: string[]; imprints: string[] } }) =>
       api(`/api/admin/users/${encodeURIComponent(email)}`, { method: "PATCH", json: { scope } }),
-    "Access updated — applies within a few seconds.",
   );
-  const people = (users.data?.users ?? []).filter((u) => u.active && u.role !== "admin");
-  const divisions = (options.data?.divisions ?? []).map((d) => ({ value: d, label: d }));
-  const imprints = (options.data?.imprints ?? []).map((d) => ({ value: d, label: d }));
+  const all = users.data?.users ?? [];
+  const restricted = all.filter((u) => u.role !== "admin" && (u.scope.divisions.length || u.scope.imprints.length));
+  const candidates = all.filter((u) => u.active && u.role !== "admin" && !restricted.includes(u));
+  const everyoneElse = all.filter((u) => u.active && !restricted.includes(u)).length;
+
+  const remove = (u: AdminUserView) => {
+    if (!window.confirm(`Remove ${u.name}'s restriction? They will see all divisions and imprints again.`)) return;
+    save.mutate({ email: u.email, scope: { divisions: [], imprints: [] } }, { onSuccess: () => toast.success(`${u.name} now sees all divisions and imprints.`) });
+  };
 
   return (
     <>
       <PageHeader
         icon={KeyRound}
         title="Access by division / imprint"
-        description="Editors can be limited to the titles of some divisions or imprints: they still see every title, but can change only theirs. Leave both empty for full access. Viewers are always read-only; admins always have full access."
+        description="By default everyone sees all divisions and imprints (*). Add a person here to limit them to some divisions or imprints: they then only see — and, as editors, change — those titles. Admins always see everything."
+        actions={
+          <Button variant="brand" onClick={() => setEditing({ email: "", divisions: [], imprints: [] })} disabled={!candidates.length} data-testid="access-add">
+            <UserPlus />
+            Add person
+          </Button>
+        }
       />
       <Section>
         {users.isPending ? (
           <Loading />
         ) : (
-          <Table head={["Person", "Role", "Divisions they can edit", "Imprints they can edit", "Result"]} empty={!people.length}>
-            {people.map((u) => {
-              const limited = u.scope.divisions.length || u.scope.imprints.length;
-              return (
-                <tr key={u.email} data-testid={`access-row-${u.email}`}>
-                  <td>
-                    <div className="font-medium">{u.name}</div>
-                    <div className="text-xs text-muted">{u.email}</div>
-                  </td>
-                  <td className="capitalize">{u.role}</td>
-                  <td>
-                    {u.role === "viewer" ? (
-                      <span className="text-xs text-muted">Read only</span>
-                    ) : (
-                      <MultiSelect
-                        label="Divisions"
-                        options={divisions}
-                        selected={u.scope.divisions}
-                        onChange={(d) => save.mutate({ email: u.email, scope: { ...u.scope, divisions: d } })}
-                      />
-                    )}
-                  </td>
-                  <td>
-                    {u.role === "viewer" ? null : (
-                      <MultiSelect
-                        label="Imprints"
-                        options={imprints}
-                        selected={u.scope.imprints}
-                        onChange={(i) => save.mutate({ email: u.email, scope: { ...u.scope, imprints: i } })}
-                      />
-                    )}
-                  </td>
-                  <td className="text-xs">
-                    {u.role === "viewer" ? (
-                      <Badge>View only</Badge>
-                    ) : limited ? (
-                      <Badge tone="warn">Limited</Badge>
-                    ) : (
-                      <Badge tone="ok">All titles</Badge>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
+          <Table head={["Person", "Role", "Divisions", "Imprints", ""]}>
+            <tr className="bg-surface-2/40" data-testid="access-default">
+              <td>
+                <div className="font-medium">Everyone else</div>
+                <div className="text-xs text-muted">
+                  {fmtInt(everyoneElse)} {everyoneElse === 1 ? "person" : "people"} not listed below, and every new user
+                </div>
+              </td>
+              <td className="text-xs text-muted">Any role</td>
+              <td>
+                <Badge tone="ok">{ALL} divisions</Badge>
+              </td>
+              <td>
+                <Badge tone="ok">{ALL} imprints</Badge>
+              </td>
+              <td />
+            </tr>
+            {restricted.map((u) => (
+              <tr key={u.email} data-testid={`access-row-${u.email}`} className={cn(!u.active && "opacity-60")}>
+                <td>
+                  <div className="font-medium">
+                    {u.name} {!u.active ? <span className="text-xs font-normal text-muted">(deactivated)</span> : null}
+                  </div>
+                  <div className="text-xs text-muted">{u.email}</div>
+                </td>
+                <td className="capitalize">{u.role}</td>
+                <td>
+                  <AccessChips values={u.scope.divisions} all={`${ALL} divisions`} />
+                </td>
+                <td>
+                  <AccessChips values={u.scope.imprints} all={`${ALL} imprints`} />
+                </td>
+                <td className="whitespace-nowrap text-right">
+                  <Button size="sm" variant="ghost" onClick={() => setEditing({ email: u.email, ...u.scope })}>
+                    Edit
+                  </Button>
+                  <Button size="sm" variant="ghost" className="text-brand" onClick={() => remove(u)} data-testid={`access-remove-${u.email}`}>
+                    Remove
+                  </Button>
+                </td>
+              </tr>
+            ))}
           </Table>
         )}
+        {!users.isPending && !restricted.length ? (
+          <p className="border-t border-line px-5 py-4 text-[12.5px] text-muted">Nobody is restricted — everyone sees all divisions and imprints.</p>
+        ) : null}
       </Section>
       <p className="pb-6 text-[12.5px] text-muted">
-        When both divisions and imprints are set, a title must match both. Changes apply on the person&apos;s next click — no need to sign them out.
+        When both divisions and imprints are chosen, a title must match both. A comparable title&apos;s figures stay visible on the titles a person can open.
+        Changes apply within a few seconds — no need to sign anyone out.
       </p>
+
+      <Dialog open={!!editing} onOpenChange={(o) => (o ? null : setEditing(null))}>
+        {editing ? (
+          <DialogContent
+            title={all.find((u) => u.email === editing.email && restricted.includes(u)) ? "Edit access" : "Restrict a person"}
+            description="Choose what they can see. Leave a list empty to allow all (*)."
+          >
+            <div className="space-y-4 px-5 py-4">
+              <label className="block text-[13px] font-medium">
+                Person
+                {restricted.some((u) => u.email === editing.email) ? (
+                  <div className="mt-1 text-[13px] font-normal">{all.find((u) => u.email === editing.email)?.name}</div>
+                ) : (
+                  <SelectField
+                    label="Person"
+                    className="mt-1 block w-full"
+                    value={editing.email}
+                    onChange={(email) => setEditing({ ...editing, email })}
+                    options={[{ value: "", label: "Choose a person…" }, ...candidates.map((u) => ({ value: u.email, label: `${u.name} (${u.role})` }))]}
+                  />
+                )}
+              </label>
+              <div>
+                <div className="mb-1 flex items-center gap-2 text-[13px] font-medium">
+                  Divisions <span className="text-xs font-normal text-muted">{editing.divisions.length ? `${editing.divisions.length} chosen` : `${ALL}`}</span>
+                </div>
+                <MultiSelect
+                  label="Divisions"
+                  options={(options.data?.divisions ?? []).map((d) => ({ value: d, label: d }))}
+                  selected={editing.divisions}
+                  onChange={(divisions) => setEditing({ ...editing, divisions })}
+                />
+              </div>
+              <div>
+                <div className="mb-1 flex items-center gap-2 text-[13px] font-medium">
+                  Imprints <span className="text-xs font-normal text-muted">{editing.imprints.length ? `${editing.imprints.length} chosen` : `${ALL}`}</span>
+                </div>
+                <MultiSelect
+                  label="Imprints"
+                  options={(options.data?.imprints ?? []).map((d) => ({ value: d, label: d }))}
+                  selected={editing.imprints}
+                  onChange={(imprints) => setEditing({ ...editing, imprints })}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
+              <Button variant="ghost" onClick={() => setEditing(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="brand"
+                disabled={!editing.email || (!editing.divisions.length && !editing.imprints.length) || save.isPending}
+                onClick={() =>
+                  save.mutate(
+                    { email: editing.email, scope: { divisions: editing.divisions, imprints: editing.imprints } },
+                    {
+                      onSuccess: () => {
+                        toast.success("Access saved.");
+                        setEditing(null);
+                      },
+                    },
+                  )
+                }
+                data-testid="access-save"
+              >
+                Save
+              </Button>
+            </div>
+          </DialogContent>
+        ) : null}
+      </Dialog>
     </>
   );
 }
+
 
 /* ---------------- Sessions ---------------- */
 

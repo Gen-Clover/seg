@@ -8,7 +8,8 @@ import { cn, fmtInt } from "@/lib/utils";
 export interface DeskTab {
   id: string;
   label: string;
-  count: number;
+  /** null while the titles are still loading. */
+  count: number | null;
   /** A work group set up by an admin (shown with a small group icon). */
   group?: boolean;
 }
@@ -146,7 +147,7 @@ export function DeskTabs({
                 <GripVertical className="size-3.5 shrink-0 cursor-grab text-subtle opacity-0 transition-opacity group-hover:opacity-100" aria-hidden />
                 {t.group ? <Layers className="size-3.5 shrink-0 text-info" aria-label="Work group" /> : null}
                 {t.label}
-                <span className="num rounded-full bg-surface-2 px-1.5 text-[11px] text-muted">{fmtInt(t.count)}</span>
+                <span className="num rounded-full bg-surface-2 px-1.5 text-[11px] text-muted">{t.count === null ? "…" : fmtInt(t.count)}</span>
               </button>
             );
           })}

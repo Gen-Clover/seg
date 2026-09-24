@@ -38,6 +38,8 @@ export async function verifySession(token: string | undefined, secret: string): 
     const { payload } = await jwtVerify(token, key(secret), { algorithms: ["HS256"] });
     const role = payload.role as Role;
     if (!payload.sub || !["admin", "editor", "viewer"].includes(role)) return null;
+    // Sessions from before session ids existed are treated as signed out.
+    if (!payload.jti) return null;
     return { email: payload.sub, name: String(payload.name ?? payload.sub), role, jti: payload.jti, iat: payload.iat };
   } catch {
     return null;

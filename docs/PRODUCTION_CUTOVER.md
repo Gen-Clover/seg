@@ -22,6 +22,10 @@ Items marked **(config)** are environment changes only; **(code)** needs a small
 - [ ] Schedule `/api/jobs/trends` (or rely on the nightly ingestion, which also refreshes the dashboard trends).
 - [ ] If existing Power BI reports read the legacy `BIL_SEG_ESTIMATES` table, add a compatibility view
       with its column names (`Laydown Goal`, `Laydown Estimate`, `6-month Estimate`, `sales notes`, …).
+- [ ] Title covers: the workspace shows `https://tme.firebrandtech.com/hna/hnafiles/covers/{isbn}.jpg` (the Firebrand/TMM
+      address the Abrams Title app uses; set in **Admin console → Branding and text → Title covers**). The live
+      `BIL_BOOKATTRIBUTES.IMAGE_URL` column holds the same addresses: confirm the pattern matches, or switch to
+      that column (add it to `SOURCE_TABLES` and the title documents). Missing covers show a "No cover available" panel.
 - [ ] **(config)** `MONGODB_URI` → client cluster (network access restricted to the app servers).
 
 ## 2. Migrating existing estimates

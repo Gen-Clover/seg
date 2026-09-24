@@ -1,7 +1,9 @@
 "use client";
 
 import { HeartPulse, Palette, RefreshCcw, ToggleRight, Wrench } from "lucide-react";
+import { useState } from "react";
 import { BrandMark, BrandName } from "@/components/brand";
+import { coverUrl } from "@/features/title/title-cover";
 import { Button } from "@/components/ui/button";
 import { Input, Spinner, Textarea } from "@/components/ui/misc";
 import { fmtInt } from "@/lib/utils";
@@ -126,8 +128,73 @@ export function BrandingPage() {
         </div>
       </div>
       <SaveBar dirty={d.dirty} saving={d.saving} onSave={() => void d.save()} onDiscard={d.discard} />
+      <CoversSection />
     </>
   );
+}
+
+/** Cover images on the title workspace (Firebrand/TMM address pattern, as in the Abrams Title app). */
+function CoversSection() {
+  const d = useSectionDraft("covers");
+  const r = d.draft;
+  const saved = d.data?.settings.covers;
+  const [isbn, setIsbn] = useState("9781419772016");
+  if (!r || !saved) return null;
+  const url = coverUrl(r.urlTemplate, isbn);
+  return (
+    <>
+      <Section title="Title covers" description="The cover shown on each title's workspace. When an image is missing or can't be loaded, a “No cover available” panel is shown instead.">
+        <SettingRow label="Show cover images" changed={r.enabled !== saved.enabled}>
+          <Switch label="Show cover images" checked={r.enabled} onChange={(enabled) => d.set({ enabled })} />
+        </SettingRow>
+        <SettingRow label="Cover address" help={<>{"{isbn}"} is replaced by the title&apos;s ISBN-13. Default: the Firebrand (TMM) cover address used by the Abrams Title app.</>} changed={r.urlTemplate !== saved.urlTemplate} stacked>
+          <Input value={r.urlTemplate} onChange={(e) => d.set({ urlTemplate: e.target.value })} maxLength={400} className="font-mono text-[12px]" />
+          {r.urlTemplate && !r.urlTemplate.includes("{isbn}") ? <p className="text-[12px] text-warn">The address must contain {"{isbn}"}.</p> : null}
+        </SettingRow>
+        <SettingRow label="Try it" help="Enter an ISBN to preview its cover with the address above." stacked>
+          <div className="flex items-start gap-4">
+            <Input value={isbn} onChange={(e) => setIsbn(e.target.value.trim())} className="w-48" />
+            <div className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted">{url ?? "—"}</div>
+          </div>
+        </SettingRow>
+        <div className="px-5 pb-4">
+          <PreviewCover template={r.urlTemplate} enabled={r.enabled} isbn={isbn} />
+        </div>
+      </Section>
+      <SaveBar dirty={d.dirty} saving={d.saving} onSave={() => void d.save()} onDiscard={d.discard} />
+    </>
+  );
+}
+
+/** Preview with the unsaved address (the live component reads the saved settings). */
+function PreviewCover({ template, enabled, isbn }: { template: string; enabled: boolean; isbn: string }) {
+  const [status, setStatus] = useState<{ key: string; state: "loading" | "ok" | "broken" }>({ key: "", state: "loading" });
+  const src = enabled ? coverUrl(template, isbn) : null;
+  const key = src ?? "";
+  if (status.key !== key) setStatus({ key, state: "loading" });
+  if (!src) return <TitleCoverFallbackNote text={enabled ? "The address needs {isbn}." : "Covers are off."} />;
+  return (
+    <div className="flex items-center gap-4">
+      <div className="flex h-[188px] w-[132px] items-center justify-center overflow-hidden rounded-lg border border-line bg-surface-2">
+        {/* eslint-disable-next-line @next/next/no-img-element -- external cover host */}
+        <img
+          key={src}
+          src={src}
+          alt="Cover preview"
+          referrerPolicy="no-referrer"
+          className={status.state === "broken" ? "hidden" : "size-full object-contain"}
+          onLoad={(e) => setStatus({ key, state: e.currentTarget.naturalWidth > 10 ? "ok" : "broken" })}
+          onError={() => setStatus({ key, state: "broken" })}
+        />
+        {status.state === "broken" ? <span className="px-2 text-center text-[11px] text-muted">No cover — the fallback panel is shown</span> : null}
+      </div>
+      <span className="text-[12.5px] text-muted">{status.state === "ok" ? "Cover found." : status.state === "broken" ? "No image at this address for that ISBN." : "Loading…"}</span>
+    </div>
+  );
+}
+
+function TitleCoverFallbackNote({ text }: { text: string }) {
+  return <p className="text-[12.5px] text-muted">{text}</p>;
 }
 
 /* ---------------- Health ---------------- */

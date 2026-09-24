@@ -136,6 +136,14 @@ export function settingsSchema() {
         mainMenuUrl: z.string().trim().max(300).default(env().MAIN_MENU_URL ?? ""),
       })
       .prefault({}),
+    covers: z
+      .object({
+        /** Show the cover image on the title workspace. */
+        enabled: z.boolean().default(true),
+        /** Image address; {isbn} is replaced by the title's ISBN-13 (Firebrand/TMM covers, as in the Abrams Title app). */
+        urlTemplate: z.string().trim().max(400).default("https://tme.firebrandtech.com/hna/hnafiles/covers/{isbn}.jpg"),
+      })
+      .prefault({}),
     announcements: z.array(announcementSchema).default([]),
     retention: z
       .object({
@@ -250,6 +258,7 @@ export async function publicSettings() {
     features: s.features,
     maintenance: s.maintenance,
     branding: s.branding,
+    covers: s.covers,
     locks: s.locks,
     announcements: s.announcements.filter((a) => a.active && (!a.from || a.from <= now) && (!a.until || a.until >= now)),
   };

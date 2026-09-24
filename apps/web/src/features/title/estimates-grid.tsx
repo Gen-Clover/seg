@@ -54,6 +54,8 @@ export interface EstimatesGridHandle {
 }
 
 interface Props {
+  /** Fill the parent's height (full-screen grid) instead of sizing to the rows. */
+  fill?: boolean;
   isbn: string;
   grid: TitleGrid;
   expanded: Set<string>;
@@ -95,6 +97,7 @@ const editableCol = (col: GridCol) => col.kind === "estimate" || col.kind === "n
 
 export const EstimatesGrid = forwardRef<EstimatesGridHandle, Props>(function EstimatesGrid(
   {
+    fill,
     isbn,
     grid,
     expanded,
@@ -426,7 +429,10 @@ export const EstimatesGrid = forwardRef<EstimatesGridHandle, Props>(function Est
   const contentHeight = HEADER_H + rows.length * ROW_H + SCROLLBAR_ROOM;
 
   return (
-    <div className="relative" style={{ height: `min(${contentHeight}px, calc(100vh - 170px))`, minHeight: Math.min(contentHeight, 240) }}>
+    <div
+      className="relative"
+      style={fill ? { height: "100%" } : { height: `min(${contentHeight}px, calc(100vh - 170px))`, minHeight: Math.min(contentHeight, 240) }}
+    >
       <div
         ref={scrollRef}
         tabIndex={0}

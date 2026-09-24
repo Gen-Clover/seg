@@ -56,7 +56,7 @@ export const ADMIN_MODULES: AdminModule[] = [
     icon: Users,
     pages: [
       { slug: "users", label: "Users", description: "Add people, change roles, deactivate or reactivate, reset passwords.", icon: Users },
-      { slug: "access", label: "Access by division / imprint", description: "Limit editors to their divisions or imprints. Viewers stay read-only.", icon: KeyRound },
+      { slug: "access", label: "Access by division / imprint", description: "Everyone sees all divisions and imprints (*) by default; restrict people to some.", icon: KeyRound },
       { slug: "sessions", label: "Sessions", description: "Who is signed in, sign people out, and how long a sign-in lasts.", icon: MonitorSmartphone },
       { slug: "demo-accounts", label: "Demo accounts", description: "Allow or block the demo logins and the password hint.", icon: ShieldCheck },
     ],

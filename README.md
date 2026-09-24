@@ -79,7 +79,8 @@ npm run lint
   an ISBN or a season/division and it answers from SEG's own data (rule-based; no AI service).
 
 - **Admin console** (`/admin`, admins only), grouped by module:
-  - *People and access* — users, roles, deactivate/reactivate, access by division/imprint, sessions
+  - *People and access* — users, roles, deactivate/reactivate, access by division/imprint (everyone sees all by
+    default; restricted people see and change only their divisions/imprints), sessions
     (sign out one device or everywhere, session length), demo accounts on/off.
   - *Planning controls* — season/title locks, **business rules** (switches, checkbox lists and dropdowns
     of real values, with a "preview the effect" count; defaults are exactly the original SEG rules),

@@ -1,3 +1,5 @@
+import { NOT_YOURS, canSeeTitle, titleScopeFilter } from "../auth/scope";
+import type { Session } from "../auth/session";
 import type { EstimateDoc, TitleAccountFactDoc, TitleDoc } from "@seg/data";
 import type { AccountFact, CompAccountFact } from "@seg/domain";
 import { collections } from "../db";
@@ -24,11 +26,11 @@ export interface TitleSummaryRow {
   updatedAt: string | null;
 }
 
-export async function getSummary(): Promise<TitleSummaryRow[]> {
+export async function getSummary(who?: Pick<Session, "role" | "scope">): Promise<TitleSummaryRow[]> {
   const titles = await collections.titles();
   const docs = await titles
     .find(
-      { inScope: true },
+      { inScope: true, ...titleScopeFilter(who) },
       {
         projection: {
           _id: 0, isbn: 1, title: 1, author: 1, season: 1, seasonSort: 1, division: 1, imprint: 1, format: 1,
@@ -88,10 +90,12 @@ function withoutId<T extends { _id: unknown }>(doc: T): Omit<T, "_id"> {
 
 const factProjection = { _id: 0, isbn: 0 } as const;
 
-export async function getTitleDetail(isbn: string): Promise<TitleDetail> {
+export async function getTitleDetail(isbn: string, who?: Pick<Session, "role" | "scope">): Promise<TitleDetail> {
   const [titles, facts, estimates] = await Promise.all([collections.titles(), collections.facts(), collections.estimates()]);
   const title = await titles.findOne({ _id: isbn }, { projection: { search: 0 } });
   if (!title) throw new HttpError(404, `Title ${isbn} was not found.`);
+  // The comparable title's figures stay visible: they are part of planning this title.
+  if (!canSeeTitle(who, title)) throw new HttpError(403, NOT_YOURS);
   const compIsbn = title.plan?.compIsbn ?? null;
 
   const [ownFacts, comp, compFacts, estimateDocs, competitive] = await Promise.all([
@@ -125,10 +129,11 @@ export const MAX_BATCH_TITLES = 60;
  * Details for many titles in four queries (exports, uploads, reports).
  * `missing` lists requested ISBNs that are not in the catalog.
  */
-export async function getTitleDetails(isbns: string[]): Promise<{ titles: TitleDetail[]; missing: string[] }> {
+export async function getTitleDetails(isbns: string[], who?: Pick<Session, "role" | "scope">): Promise<{ titles: TitleDetail[]; missing: string[] }> {
   const wanted = [...new Set(isbns)];
   const [titlesCol, factsCol, estimatesCol] = await Promise.all([collections.titles(), collections.facts(), collections.estimates()]);
-  const titleDocs = await titlesCol.find({ _id: { $in: wanted } }, { projection: { search: 0 } }).toArray();
+  // Titles outside the person's access are reported as missing.
+  const titleDocs = await titlesCol.find({ _id: { $in: wanted }, ...titleScopeFilter(who) }, { projection: { search: 0 } }).toArray();
   const byIsbn = new Map(titleDocs.map((t) => [t._id, t]));
   const compIsbns = [...new Set(titleDocs.map((t) => t.plan?.compIsbn).filter((c): c is string => !!c))];
 
@@ -186,7 +191,7 @@ export interface TitleSearchHit {
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** Any catalog title (including backlist) — used to pick comparable titles and for global search. */
-export async function searchTitles(query: string, limit = 20): Promise<TitleSearchHit[]> {
+export async function searchTitles(query: string, limit = 20, who?: Pick<Session, "role" | "scope">): Promise<TitleSearchHit[]> {
   const q = query.trim().toLowerCase();
   if (!q) return [];
   const titles = await collections.titles();
@@ -196,6 +201,7 @@ export async function searchTitles(query: string, limit = 20): Promise<TitleSear
     .find(
       {
         search: { $regex: escapeRegex(q) },
+        ...titleScopeFilter(who),
         ...(rules.compExcludedIpmFormats.length ? { ipmFormat: { $nin: rules.compExcludedIpmFormats } } : {}),
         ...(words ? { format: { $not: new RegExp(words, "i") } } : {}),
       },

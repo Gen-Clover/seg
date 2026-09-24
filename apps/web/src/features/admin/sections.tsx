@@ -5,6 +5,7 @@ import { AnnouncementsPage, AssistantPage, ModerationPage, NotificationsPage } f
 import { DemoResetPage, JobsPage, RefreshPage, SyncPage } from "./data";
 import { AccessPage, DemoAccountsPage, SessionsPage, UsersPage } from "./people";
 import { AccountsPage, BulkPage, DeskDefaultsPage, LocksPage, RulesPage } from "./planning";
+import { WorkGroupsPage } from "./work-groups";
 import { BrandingPage, FeaturesPage, HealthPage, MaintenancePage } from "./system";
 
 const PAGES: Record<string, () => React.ReactNode> = {
@@ -14,6 +15,7 @@ const PAGES: Record<string, () => React.ReactNode> = {
   "demo-accounts": DemoAccountsPage,
   locks: LocksPage,
   rules: RulesPage,
+  "work-groups": WorkGroupsPage,
   desk: DeskDefaultsPage,
   accounts: AccountsPage,
   bulk: BulkPage,

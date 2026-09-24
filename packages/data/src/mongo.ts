@@ -259,6 +259,8 @@ export interface UserDoc {
   lastSignInAt?: string | null;
   /** Editing limited to these divisions / imprints (empty = all). Viewers are always read-only. */
   scope?: { divisions: string[]; imprints: string[] };
+  /** Personal preferences (e.g. the order of My Desk tabs), saved across sign-ins. */
+  prefs?: { deskTabs?: string[] };
   /** Sessions issued before this time are no longer valid ("sign out everywhere"). */
   sessionsValidAfter?: string | null;
   updatedAt?: string;

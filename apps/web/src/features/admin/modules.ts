@@ -11,6 +11,7 @@ import {
   HeartPulse,
   History,
   KeyRound,
+  Layers,
   LayoutList,
   Lock,
   LogIn,
@@ -69,6 +70,7 @@ export const ADMIN_MODULES: AdminModule[] = [
     pages: [
       { slug: "locks", label: "Season and title locks", description: "Make a season or title read-only, with a note; unlock with a reason.", icon: Lock },
       { slug: "rules", label: "Business rules", description: "Account-level channels, seasons, formats in and out of scope, comparable titles, note lengths.", icon: Scale },
+      { slug: "work-groups", label: "Work groups", description: "Named tabs of titles on My Desk for chosen people, picked by rules (season, division, imprint, dates, status…).", icon: Layers },
       { slug: "desk", label: "My Desk defaults", description: "Due-soon window, overdue look-back and below-goal threshold.", icon: CalendarClock },
       { slug: "accounts", label: "Account catalog", description: "Search every channel, organization and account; see when it was last refreshed.", icon: Building2 },
       { slug: "bulk", label: "Bulk actions", description: "Clear or copy estimates for a title or season, with a preview first.", icon: Wand2 },

@@ -5,6 +5,7 @@ import {
   SHEET_COLUMN_ORDER,
   buildExportRows,
   buildTitleGrid,
+  type DomainConfig,
   type EstimateRecord,
 } from "@seg/domain";
 import { fetchTitleDetails } from "@/lib/batch";
@@ -37,10 +38,10 @@ const ACCOUNT_WIDTHS: Partial<Record<(typeof SHEET_COLUMN_ORDER)[number], number
   isbnTitle: 35, compTitle: 35, channelName: 25, orgName: 28, accountName: 32, salesNotes: 30,
 };
 
-function accountDetailRows(details: TitleDetail[]) {
+function accountDetailRows(details: TitleDetail[], config?: DomainConfig) {
   const out: (string | number | null)[][] = [];
   for (const d of details) {
-    const grid = buildTitleGrid({ facts: d.facts, compFacts: d.compFacts, estimates: d.estimates as EstimateRecord[] });
+    const grid = buildTitleGrid({ facts: d.facts, compFacts: d.compFacts, estimates: d.estimates as EstimateRecord[], config });
     const rows = buildExportRows(
       { isbn: d.title.isbn, title: d.title.title, compIsbn: d.comp?.isbn ?? null, compTitle: d.comp?.title ?? null },
       grid,
@@ -58,9 +59,10 @@ export async function exportAccountDetails(
   isbns: string[],
   format: "xlsx" | "csv",
   onProgress?: (done: number, total: number) => void,
+  config?: DomainConfig,
 ): Promise<{ rows: number; titles: number; missing: string[] }> {
   const { titles, missing } = await fetchTitleDetails(isbns, onProgress);
-  const rows = accountDetailRows(titles);
+  const rows = accountDetailRows(titles, config);
   const headers = SHEET_COLUMN_ORDER.map((k) => SHEET_COLUMNS[k]);
   const name = `SEG Account Details - ${titles.length === 1 ? titles[0]!.title.isbn : "Multiple_ISBNs"} ${dateStamp()}`;
   if (format === "csv") downloadCsv(`${name}.csv`, headers, rows);

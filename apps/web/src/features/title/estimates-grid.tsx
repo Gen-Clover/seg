@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/misc";
 import { Popover, PopoverAnchor, PopoverContent, Tooltip } from "@/components/ui/overlay";
 import { clockTime } from "@/lib/people";
 import { usePersonName } from "@/lib/queries";
+import { useAppSettings } from "@/lib/settings";
 import { cn, fmtInt } from "@/lib/utils";
 import {
   GRID_COLS,
@@ -53,6 +54,8 @@ export interface EstimatesGridHandle {
 }
 
 interface Props {
+  /** Fill the parent's height (full-screen grid) instead of sizing to the rows. */
+  fill?: boolean;
   isbn: string;
   grid: TitleGrid;
   expanded: Set<string>;
@@ -94,6 +97,7 @@ const editableCol = (col: GridCol) => col.kind === "estimate" || col.kind === "n
 
 export const EstimatesGrid = forwardRef<EstimatesGridHandle, Props>(function EstimatesGrid(
   {
+    fill,
     isbn,
     grid,
     expanded,
@@ -116,6 +120,7 @@ export const EstimatesGrid = forwardRef<EstimatesGridHandle, Props>(function Est
 ) {
   const rows = useMemo(() => flattenGrid(grid, expanded, filter), [grid, expanded, filter]);
   const nameOf = usePersonName();
+  const salesNoteMax = useAppSettings().rules.salesNoteMaxLength;
   const scrollRef = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState<Active>({ r: 0, c: 2 });
   const [editing, setEditing] = useState<{ draft: string } | null>(null);
@@ -390,6 +395,7 @@ export const EstimatesGrid = forwardRef<EstimatesGridHandle, Props>(function Est
                   ref={inputRef}
                   value={editing.draft}
                   inputMode={col.kind === "estimate" ? "numeric" : "text"}
+                  maxLength={col.kind === "notes" ? salesNoteMax : undefined}
                   onChange={(e) => setEditing({ draft: col.kind === "estimate" ? e.target.value.replace(/[^0-9,]/g, "") : e.target.value })}
                   onBlur={() => commit(editing.draft)}
                   onKeyDown={(e) => {
@@ -423,7 +429,10 @@ export const EstimatesGrid = forwardRef<EstimatesGridHandle, Props>(function Est
   const contentHeight = HEADER_H + rows.length * ROW_H + SCROLLBAR_ROOM;
 
   return (
-    <div className="relative" style={{ height: `min(${contentHeight}px, calc(100vh - 170px))`, minHeight: Math.min(contentHeight, 240) }}>
+    <div
+      className="relative"
+      style={fill ? { height: "100%" } : { height: `min(${contentHeight}px, calc(100vh - 170px))`, minHeight: Math.min(contentHeight, 240) }}
+    >
       <div
         ref={scrollRef}
         tabIndex={0}

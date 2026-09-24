@@ -22,7 +22,7 @@ export async function api<T>(path: string, init?: RequestInit & { json?: unknown
     const next = window.location.pathname + window.location.search;
     // Full navigation on purpose: the session is gone, so all client state is discarded.
     // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-    window.location.href = `/login?next=${encodeURIComponent(next)}`;
+    window.location.href = `/api/auth/expired?next=${encodeURIComponent(next)}`;
     throw new ApiError(401, "Please sign in.");
   }
   const text = await res.text();

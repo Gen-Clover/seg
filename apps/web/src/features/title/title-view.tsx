@@ -15,11 +15,16 @@ import {
   Eye,
   History,
   Keyboard,
+  Maximize2,
+  Minimize2,
+  Lock,
   MessageSquare,
   Redo2,
   Share2,
+  ShieldAlert,
   Search,
   Undo2,
+  Wrench,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -44,13 +49,16 @@ import { Badge, Card, Input, Kbd, Skeleton, Spinner, Textarea } from "@/componen
 import { Popover, PopoverContent, PopoverTrigger, Tooltip } from "@/components/ui/overlay";
 import { api } from "@/lib/api";
 import { initials, personColor } from "@/lib/people";
+import { editBlock, useAppSettings, useDomainConfig } from "@/lib/settings";
+import { TitleCover } from "./title-cover";
+import type { Session } from "@/server/auth/session";
 import { queryKeys, useComments, useMe, usePrefetchTitle, useSummary, useTitle, type TitleDetail } from "@/lib/queries";
 import type { Viewer } from "@/server/services/live";
 import { cn, fmtDate, fmtInt, fmtMoney, fmtSigned, timeAgo } from "@/lib/utils";
 import { useWorklist } from "@/lib/worklist";
 import { shareInAskAbrams } from "../ask-abrams/dock";
 import { AddAccountDialog } from "./add-account-dialog";
-import { CompPanel } from "./comp-panel";
+import { CompPanel, CompPicker } from "./comp-panel";
 import { EstimatesGrid, type EstimatesGridHandle } from "./estimates-grid";
 import { ActivityPanel, type HistoryItem, type PanelTab } from "./activity-panel";
 import { rowKeysOfThread, threadTarget, type ThreadTarget } from "./comments";
@@ -79,9 +87,15 @@ const FIELD_NAME: Record<string, string> = {
   titleNotes: "Title notes",
 };
 
-export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean }) {
+export function TitleView({ isbn, user }: { isbn: string; user: Pick<Session, "role" | "scope"> }) {
   const detail = useTitle(isbn);
   const qc = useQueryClient();
+  const settings = useAppSettings();
+  const config = useDomainConfig();
+  const t0 = detail.data?.title;
+  // Viewer role, maintenance mode, a season/title lock or division/imprint access make the title read-only.
+  const block = editBlock(user, settings, { isbn, season: t0?.season ?? null, division: t0?.division ?? null, imprint: t0?.imprint ?? null });
+  const canEdit = !block;
   const autosave = useAutosave(isbn, canEdit);
   const gridRef = useRef<EstimatesGridHandle>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -90,13 +104,32 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
   const [highlight, setHighlight] = useState<string | null>(null);
   const me = useMe().data?.user ?? null;
   const [editingCell, setEditingCell] = useState<string | null>(null);
-  const live = useLive(isbn, editingCell);
-  const comments = useComments(isbn);
+  const live = useLive(isbn, editingCell, settings.features.liveTeamwork);
+  const comments = useComments(isbn, settings.features.comments);
   const [panel, setPanel] = useState<{ open: boolean; tab: PanelTab; thread: ThreadTarget | null }>({ open: false, tab: "comments", thread: null });
   const [focusKey, setFocusKey] = useState<string | null>(null);
 
   // Link from a notification (?thread=<key>): open that conversation and bring its row into view.
-  const threadParam = useSearchParams().get("thread");
+  const searchParams = useSearchParams();
+  const threadParam = searchParams.get("thread");
+  const router = useRouter();
+  // Full-screen grid: kept in the URL (?grid=full) so Previous / Next stay in full screen.
+  const full = searchParams.get("grid") === "full";
+  const setFull = useCallback(
+    (on: boolean) => router.replace(`/titles/${encodeURIComponent(isbn)}${on ? "?grid=full" : ""}`, { scroll: false }),
+    [router, isbn],
+  );
+  useEffect(() => {
+    if (!full) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest("input, textarea, select, [contenteditable='true'], [role='dialog'], [data-radix-popper-content-wrapper]")) return;
+      setFull(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [full, setFull]);
   const [seenThreadParam, setSeenThreadParam] = useState<string | null>(null);
   if (threadParam !== seenThreadParam) {
     setSeenThreadParam(threadParam);
@@ -117,8 +150,8 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
   const grid = useMemo(() => {
     if (!data) return null;
     const drafts: AccountFact[] = draftAccounts.map((r) => ({ ...r, initialOrder: 0 }));
-    return buildTitleGrid({ facts: [...data.facts, ...drafts], compFacts: data.compFacts, estimates });
-  }, [data, estimates, draftAccounts]);
+    return buildTitleGrid({ facts: [...data.facts, ...drafts], compFacts: data.compFacts, estimates, config });
+  }, [data, estimates, draftAccounts, config]);
   const totals = useMemo(() => (grid ? titleTotals(grid) : null), [grid]);
 
   const focusedRef = useRef<string | null>(null);
@@ -145,10 +178,10 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
   const replay = useCallback((cell: UndoCell, value: CellValue) => edit(cell.level, cell.ref, cell.field, value), [edit]);
   const { record, undo, redo, canUndo, canRedo } = useUndo(replay);
   const change = useCallback(
-    (level: Level, ref: AccountRef, field: EstimateField, value: CellValue) => {
+    (level: Level, ref: AccountRef, field: EstimateField, value: CellValue, source: "grid" | "restore" = "grid") => {
       const r = refForLevel(level, ref);
       record({ level, ref: r, field, before: currentOwn(level, r, field), after: value });
-      edit(level, r, field, value);
+      edit(level, r, field, value, source);
     },
     [record, edit, currentOwn],
   );
@@ -205,6 +238,18 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
     onError: (err) => toast.error(err instanceof Error ? err.message : "Could not save."),
   });
 
+  /** Change or remove the comparable title (removal offers Undo). */
+  const changeComp = (compIsbn: string | null) => {
+    const previous = detail.data?.comp ?? null;
+    plan.mutate({ compIsbn });
+    if (compIsbn === null && previous) {
+      toast(`Comparable title removed: ${previous.title}`, {
+        duration: 8000,
+        action: { label: "Undo", onClick: () => plan.mutate({ compIsbn: previous.isbn }) },
+      });
+    }
+  };
+
   const onEdit = useCallback(
     (row: GridRow, field: EstimateField, value: number | string | null) => {
       const level = rowLevel(row);
@@ -230,7 +275,7 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
       if (item.field === "compIsbn") plan.mutate({ compIsbn: item.oldValue === null ? null : String(item.oldValue) });
       else plan.mutate({ titleNotes: String(item.oldValue ?? "") });
     } else {
-      change(item.level, refOfItem(item), item.field as EstimateField, item.oldValue);
+      change(item.level, refOfItem(item), item.field as EstimateField, item.oldValue, "restore");
     }
     toast.success(`${FIELD_NAME[item.field] ?? item.field} restored to ${item.oldValue === null || item.oldValue === "" ? "blank" : typeof item.oldValue === "number" ? fmtInt(item.oldValue) : item.oldValue}`);
   };
@@ -260,7 +305,7 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
     if (!grid) return;
     const key = accountKey(ref);
     const channel = grid.channels.find((c) => c.orgs.some((o) => o.accounts.some((a) => a.key === key)));
-    const accountLevel = isAccountLevelChannel(ref.channelId);
+    const accountLevel = isAccountLevelChannel(ref.channelId, config);
     if (!channel) setDraftAccounts((d) => [...d, ref]);
     // Expand the path and focus the row once it renders.
     setTimeout(() => {
@@ -308,11 +353,14 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
         status={autosave.status}
         lastSavedAt={autosave.lastSavedAt}
         canEdit={canEdit}
+        readOnlyReason={block?.kind === "lock" ? "Locked" : block?.kind === "maintenance" ? "Maintenance" : null}
         titleName={data?.title.title ?? null}
         viewers={live.viewers}
         commentCount={comments.data?.comments.length ?? 0}
+        commentsOn={settings.features.comments}
         onPanel={(tab) => setPanel({ open: true, tab, thread: null })}
       />
+      {block && block.kind !== "viewer" ? <ReadOnlyBanner kind={block.kind} message={block.message} lockedAt={block.lock?.lockedAt} /> : null}
       {!data || !grid || !totals ? (
         <TitleSkeleton />
       ) : (
@@ -331,21 +379,30 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
               comp={data.comp}
               canEdit={canEdit}
               saving={plan.isPending && plan.variables?.compIsbn !== undefined}
-              onChange={(compIsbn) => {
-                const previous = data.comp;
-                plan.mutate({ compIsbn });
-                // Removal is one click: offer an easy way back.
-                if (compIsbn === null && previous) {
-                  toast(`Comparable title removed: ${previous.title}`, {
-                    duration: 8000,
-                    action: { label: "Undo", onClick: () => plan.mutate({ compIsbn: previous.isbn }) },
-                  });
-                }
-              }}
+              onChange={changeComp}
             />
           </div>
 
-          <Card className="flex flex-col overflow-hidden">
+          <Card
+            className={cn("flex flex-col overflow-hidden", full && "fixed inset-0 z-40 rounded-none border-0 shadow-none")}
+            data-testid="grid-card"
+            data-full={full ? "true" : undefined}
+            role={full ? "region" : undefined}
+            aria-label={full ? `${data.title.title} — full-screen grid` : undefined}
+          >
+            {full ? (
+              <FullScreenHeader
+                data={data}
+                totals={totals}
+                canEdit={canEdit}
+                readOnlyReason={block?.kind === "lock" ? "Locked" : block?.kind === "maintenance" ? "Maintenance" : null}
+                status={autosave.status}
+                lastSavedAt={autosave.lastSavedAt}
+                compSaving={plan.isPending && plan.variables?.compIsbn !== undefined}
+                onComp={changeComp}
+                onExit={() => setFull(false)}
+              />
+            ) : null}
             <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2.5">
               <div className="relative w-64">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-subtle" />
@@ -382,10 +439,17 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
                 <Legend />
                 <ShortcutsHelp />
                 {canEdit ? <AddAccountDialog onPick={addAccount} /> : null}
+                <Tooltip content={full ? "Exit full screen (Esc)" : "Full screen — work on the grid using the whole screen"}>
+                  <Button size="sm" variant={full ? "primary" : "outline"} onClick={() => setFull(!full)} data-testid="grid-fullscreen">
+                    {full ? <Minimize2 /> : <Maximize2 />}
+                    {full ? "Exit full screen" : "Full screen"}
+                  </Button>
+                </Tooltip>
               </div>
             </div>
-            <div>
+            <div className={cn(full && "min-h-0 flex-1")}>
               <EstimatesGrid
+                fill={full}
                 ref={gridRef}
                 isbn={isbn}
                 grid={grid}
@@ -420,6 +484,7 @@ export function TitleView({ isbn, canEdit }: { isbn: string; canEdit: boolean })
         onShowRow={showRow}
         me={{ email: me?.email ?? "", role: me?.role ?? "viewer" }}
         canEdit={canEdit}
+        commentsOn={settings.features.comments}
         currentValue={currentValue}
         onRestore={restore}
       />
@@ -483,39 +548,156 @@ function ShortcutsHelp() {
   );
 }
 
+/** The list this title is being worked through (a work list, or all titles by pub date) and its neighbours. */
+function useTitleNav(isbn: string) {
+  const worklist = useWorklist();
+  const summary = useSummary();
+  const list = useMemo(() => {
+    if (worklist?.isbns.includes(isbn)) return worklist;
+    const all = [...(summary.data?.titles ?? [])].sort((a, b) => (a.pubDate ?? "").localeCompare(b.pubDate ?? "") || a.isbn.localeCompare(b.isbn));
+    return { isbns: all.map((t) => t.isbn), label: "All titles", href: "/summary" };
+  }, [worklist, isbn, summary.data]);
+  const idx = list.isbns.indexOf(isbn);
+  return {
+    list,
+    idx,
+    prev: idx > 0 ? list.isbns[idx - 1] : undefined,
+    next: idx >= 0 && idx < list.isbns.length - 1 ? list.isbns[idx + 1] : undefined,
+  };
+}
+
+/**
+ * Header of the full-screen grid: the essentials for data entry — which title, Previous / Next,
+ * the comparable title (with Change), the key totals and the save status.
+ */
+function FullScreenHeader({
+  data,
+  totals,
+  canEdit,
+  readOnlyReason,
+  status,
+  lastSavedAt,
+  compSaving,
+  onComp,
+  onExit,
+}: {
+  data: TitleDetail;
+  totals: ReturnType<typeof titleTotals>;
+  canEdit: boolean;
+  readOnlyReason: string | null;
+  status: SaveStatus;
+  lastSavedAt: number | null;
+  compSaving: boolean;
+  onComp: (compIsbn: string | null) => void;
+  onExit: () => void;
+}) {
+  const t = data.title;
+  const { list, idx, prev, next } = useTitleNav(t.isbn);
+  const gap = totals.estimateVsGoal;
+  const stat = (label: string, value: string, tone?: string) => (
+    <div className="min-w-0 leading-tight">
+      <div className="truncate text-[10.5px] uppercase tracking-wide text-subtle">{label}</div>
+      <div className={cn("num text-[14px] font-semibold", tone)}>{value}</div>
+    </div>
+  );
+  return (
+    <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-surface-2/60 px-4 py-2.5" data-testid="fullscreen-header">
+      <Tooltip content="Exit full screen (Esc)">
+        <Button variant="ghost" size="icon-sm" onClick={onExit} aria-label="Exit full screen">
+          <Minimize2 />
+        </Button>
+      </Tooltip>
+      <div className="flex items-center gap-1">
+        <Tooltip content={prev ? "Previous title (Alt ←)" : null}>
+          <Button asChild={!!prev} variant="outline" size="icon-sm" disabled={!prev} aria-label="Previous title">
+            {prev ? (
+              <Link href={`/titles/${prev}?grid=full`}>
+                <ChevronLeft />
+              </Link>
+            ) : (
+              <ChevronLeft />
+            )}
+          </Button>
+        </Tooltip>
+        <span className="num min-w-[70px] text-center text-xs text-muted" title={list.label}>
+          {idx >= 0 ? `${fmtInt(idx + 1)} of ${fmtInt(list.isbns.length)}` : ""}
+        </span>
+        <Tooltip content={next ? "Next title (Alt →)" : null}>
+          <Button asChild={!!next} variant="outline" size="icon-sm" disabled={!next} aria-label="Next title">
+            {next ? (
+              <Link href={`/titles/${next}?grid=full`}>
+                <ChevronRight />
+              </Link>
+            ) : (
+              <ChevronRight />
+            )}
+          </Button>
+        </Tooltip>
+      </div>
+      <div className="min-w-0 max-w-[340px]">
+        <div className="truncate text-[15px] font-semibold" title={t.title}>
+          {t.title}
+        </div>
+        <div className="num flex items-center gap-1.5 truncate text-xs text-muted">
+          {t.isbn}
+          {t.season ? <Badge tone="info">{t.season}</Badge> : null}
+          {t.format ? <span>· {t.format}</span> : null}
+        </div>
+      </div>
+      <div className="hidden items-center gap-5 border-l border-line pl-4 xl:flex">
+        {stat("Initial orders", fmtInt(totals.initialOrder))}
+        {stat("Laydown goal", fmtInt(totals.laydownGoal))}
+        {stat("Laydown estimate", fmtInt(totals.laydownEstimate))}
+        {stat("6-month", fmtInt(totals.sixMonthEstimate))}
+        {stat("Vs goal", gap === null ? "—" : fmtSigned(-gap), gap === null ? "text-muted" : gap > 0 ? "text-warn" : gap < 0 ? "text-ok" : undefined)}
+      </div>
+      <div className="ml-auto flex min-w-0 items-center gap-2">
+        <div className="min-w-0 text-right leading-tight" data-testid="fullscreen-comp">
+          <div className="text-[10.5px] uppercase tracking-wide text-subtle">Comparable title</div>
+          {data.comp ? (
+            <div className="max-w-[260px] truncate text-[13px] font-medium" title={`${data.comp.title} (${data.comp.isbn})`}>
+              {data.comp.title} <span className="num text-xs font-normal text-muted">{data.comp.isbn}</span>
+            </div>
+          ) : (
+            <div className="text-[13px] text-muted">None yet</div>
+          )}
+        </div>
+        {compSaving ? <Spinner className="size-3.5" /> : null}
+        {canEdit ? <CompPicker isbn={t.isbn} hasComp={!!data.comp} onPick={onComp} /> : null}
+        <span className="mx-1 h-6 w-px bg-line" />
+        {canEdit ? <SaveIndicator status={status} lastSavedAt={lastSavedAt} /> : <ReadOnlyBadge reason={readOnlyReason} />}
+      </div>
+    </div>
+  );
+}
+
 function TopBar({
   isbn,
   status,
   lastSavedAt,
   canEdit,
+  readOnlyReason,
   titleName,
   viewers,
   commentCount,
+  commentsOn,
   onPanel,
 }: {
   isbn: string;
   status: SaveStatus;
   lastSavedAt: number | null;
   canEdit: boolean;
+  readOnlyReason: string | null;
   titleName: string | null;
   viewers: Viewer[];
   commentCount: number;
+  commentsOn: boolean;
   onPanel: (tab: PanelTab) => void;
 }) {
   const router = useRouter();
-  const worklist = useWorklist();
-  const summary = useSummary();
   const prefetch = usePrefetchTitle();
 
-  const list = useMemo(() => {
-    if (worklist?.isbns.includes(isbn)) return worklist;
-    const all = [...(summary.data?.titles ?? [])].sort((a, b) => (a.pubDate ?? "").localeCompare(b.pubDate ?? "") || a.isbn.localeCompare(b.isbn));
-    return { isbns: all.map((t) => t.isbn), label: "All titles", href: "/summary" };
-  }, [worklist, isbn, summary.data]);
-
-  const idx = list.isbns.indexOf(isbn);
-  const prev = idx > 0 ? list.isbns[idx - 1] : undefined;
-  const next = idx >= 0 && idx < list.isbns.length - 1 ? list.isbns[idx + 1] : undefined;
+  const { list, idx, prev, next } = useTitleNav(isbn);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -525,20 +707,21 @@ function TopBar({
     return () => clearTimeout(t);
   }, [next, prev, prefetch]);
 
+  const keepFull = useSearchParams().get("grid") === "full" ? "?grid=full" : "";
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!e.altKey) return;
       if (e.key === "ArrowRight" && next) {
         e.preventDefault();
-        router.push(`/titles/${next}`);
+        router.push(`/titles/${next}${keepFull}`);
       } else if (e.key === "ArrowLeft" && prev) {
         e.preventDefault();
-        router.push(`/titles/${prev}`);
+        router.push(`/titles/${prev}${keepFull}`);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [next, prev, router]);
+  }, [next, prev, router, keepFull]);
 
   return (
     <div className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-line bg-canvas/85 px-5 backdrop-blur lg:px-6">
@@ -577,11 +760,13 @@ function TopBar({
       </div>
       <div className="ml-auto flex items-center gap-2">
         <Presence viewers={viewers} />
-        <Button variant="ghost" size="sm" onClick={() => onPanel("comments")}>
-          <MessageSquare />
-          Comments
-          {commentCount ? <span className="num rounded-full bg-info-soft px-1.5 text-[11px] font-semibold text-info">{commentCount}</span> : null}
-        </Button>
+        {commentsOn ? (
+          <Button variant="ghost" size="sm" onClick={() => onPanel("comments")}>
+            <MessageSquare />
+            Comments
+            {commentCount ? <span className="num rounded-full bg-info-soft px-1.5 text-[11px] font-semibold text-info">{commentCount}</span> : null}
+          </Button>
+        ) : null}
         <Button variant="ghost" size="sm" onClick={() => onPanel("history")}>
           <History />
           History
@@ -595,7 +780,7 @@ function TopBar({
           </Tooltip>
         ) : null}
         <span className="mx-1 h-5 w-px bg-line" />
-        {canEdit ? <SaveIndicator status={status} lastSavedAt={lastSavedAt} /> : <ReadOnlyBadge />}
+        {canEdit ? <SaveIndicator status={status} lastSavedAt={lastSavedAt} /> : <ReadOnlyBadge reason={readOnlyReason} />}
       </div>
     </div>
   );
@@ -628,12 +813,32 @@ function Presence({ viewers }: { viewers: Viewer[] }) {
   );
 }
 
-function ReadOnlyBadge() {
+function ReadOnlyBadge({ reason }: { reason: string | null }) {
   return (
-    <Badge className="gap-1.5 py-1">
-      <Eye className="size-3.5" />
-      View only
+    <Badge tone={reason ? "warn" : "neutral"} className="gap-1.5 py-1">
+      {reason === "Locked" ? <Lock className="size-3.5" /> : <Eye className="size-3.5" />}
+      {reason ?? "View only"}
     </Badge>
+  );
+}
+
+/** Why this title can't be changed right now (lock, maintenance, access limit). */
+function ReadOnlyBanner({ kind, message, lockedAt }: { kind: "maintenance" | "lock" | "scope"; message: string; lockedAt?: string }) {
+  const Icon = kind === "lock" ? Lock : kind === "maintenance" ? Wrench : ShieldAlert;
+  const lead = kind === "lock" ? "This title is locked." : kind === "maintenance" ? "Read-only for maintenance." : "View only for you.";
+  return (
+    <div role="status" data-testid="read-only-banner" className="mx-5 mt-3 flex items-start gap-2.5 rounded-xl border border-warn/30 bg-warn-soft px-3.5 py-2.5 text-[13px] text-ink lg:mx-6">
+      <Icon className="mt-0.5 size-4 shrink-0 text-warn" />
+      <p>
+        <span className="font-semibold">{lead}</span> {message}
+        {lockedAt ? (
+          <span className="text-muted" suppressHydrationWarning>
+            {" "}
+            · locked {fmtDate(lockedAt)}
+          </span>
+        ) : null}
+      </p>
+    </div>
   );
 }
 
@@ -731,7 +936,6 @@ function Kpi({ label, value, hint, tone }: { label: string; value: string; hint?
   );
 }
 
-const NOTES_LIMIT = 4000;
 
 function DetailsCard({
   data,
@@ -747,6 +951,7 @@ function DetailsCard({
   notesSavedAt: number | null;
 }) {
   const t = data.title;
+  const notesLimit = useAppSettings().rules.titleNoteMaxLength;
   const [notes, setNotes] = useState(t.plan.titleNotes);
   const [sent, setSent] = useState(t.plan.titleNotes);
   useEffect(() => {
@@ -811,7 +1016,9 @@ function DetailsCard({
           </div>
         ) : null}
       </div>
-      <div className="flex flex-col">
+      {/* The cover fills the space beside the details; notes run the full width underneath. */}
+      <TitleCover isbn={t.isbn} title={t.title} className="h-full min-h-[220px] w-full" />
+      <div className="flex flex-col lg:col-span-2">
         <div className="mb-2.5 flex items-baseline justify-between gap-2">
           <label htmlFor="title-notes" className="text-[13px] font-semibold">
             Title notes
@@ -826,15 +1033,15 @@ function DetailsCard({
         <Textarea
           id="title-notes"
           value={notes}
-          maxLength={NOTES_LIMIT}
+          maxLength={notesLimit}
           onChange={(e) => setNotes(e.target.value)}
           readOnly={!canEdit}
           placeholder={canEdit ? "Add a note for the whole title… (saved automatically)" : "No notes"}
-          className="field-sizing-content max-h-64 min-h-20 focus:border-info/60 focus:ring-info/15"
+          className="h-28 overflow-y-auto focus:border-info/60 focus:ring-info/15"
         />
         {canEdit ? (
-          <div className={cn("mt-1 text-right text-[11px]", notes.length > NOTES_LIMIT * 0.9 ? "text-warn" : "text-subtle")}>
-            {fmtInt(notes.length)} / {fmtInt(NOTES_LIMIT)}
+          <div className={cn("mt-1 text-right text-[11px]", notes.length > notesLimit * 0.9 ? "text-warn" : "text-subtle")}>
+            {fmtInt(notes.length)} / {fmtInt(notesLimit)}
           </div>
         ) : null}
       </div>

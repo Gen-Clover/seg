@@ -3,6 +3,9 @@ import { z } from "zod";
 import type { Role } from "@seg/data";
 import { currentSession } from "./auth/current";
 import type { Session } from "./auth/session";
+import { getSettings, type AppSettings } from "./services/settings";
+
+type FeatureKey = keyof AppSettings["features"];
 
 export class HttpError extends Error {
   constructor(
@@ -22,7 +25,13 @@ type Handler<C> = (ctx: { request: Request; session: Session; params: C }) => Pr
  */
 export function route<C = Record<string, string>>(
   handler: Handler<C>,
-  options: { roles?: Role[] } = {},
+  options: {
+    roles?: Role[];
+    /** Changes data: blocked for non-admins while maintenance mode is on. */
+    write?: boolean;
+    /** Only available while this module is switched on in the admin console. */
+    feature?: FeatureKey;
+  } = {},
 ) {
   return async (request: Request, context: { params: Promise<C> }) => {
     const started = performance.now();
@@ -31,6 +40,11 @@ export function route<C = Record<string, string>>(
       if (!session) throw new HttpError(401, "Please sign in.");
       if (options.roles && !options.roles.includes(session.role)) {
         throw new HttpError(403, "You don't have permission to do that.");
+      }
+      if (options.write || options.feature) {
+        const settings = await getSettings();
+        if (options.feature && !settings.features[options.feature]) throw new HttpError(404, "This feature is turned off by an administrator.");
+        if (options.write && settings.maintenance.on && session.role !== "admin") throw new HttpError(503, settings.maintenance.message);
       }
       const params = (await context?.params) ?? ({} as C);
       const result = await handler({ request, session, params });

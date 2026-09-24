@@ -1,5 +1,9 @@
+import { assertCanSeeTitle, canSeeTitle } from "../auth/scope";
 import { belowGoal, dueSoon, parseAssistantQuery, withoutComparable, type AssistantIntent, type FacetValues } from "@seg/domain";
+import { randomUUID } from "node:crypto";
 import type { Session } from "../auth/session";
+import { HttpError } from "../http";
+import { getSettings } from "./settings";
 import { collections } from "../db";
 import { listNotifications } from "./comments";
 import { changedByOthers } from "./desk";
@@ -27,10 +31,29 @@ function facetValues(rows: TitleSummaryRow[]): FacetValues {
 }
 
 export async function askAssistant(input: string, session: Session): Promise<AssistantReply & { intent: AssistantIntent["kind"] }> {
-  const rows = await getSummary();
+  const settings = await getSettings();
+  if (!settings.assistant.enabled) throw new HttpError(404, "The assistant is turned off by an administrator.");
+  const rows = await getSummary(session);
   const intent = parseAssistantQuery(input, facetValues(rows));
   const byIsbn = new Map(rows.map((t) => [t.isbn, t]));
-  const reply = await answer(intent, session, rows, byIsbn);
+  let reply = await answer(intent, session, rows, byIsbn);
+  if (intent.kind === "help") {
+    reply = { ...reply, text: settings.assistant.greeting.replace("{name}", session.name.split(" ")[0] ?? ""), suggestions: settings.assistant.suggestions };
+  }
+  // Keep typed questions (not the automatic greeting) for the admin "couldn't answer" report.
+  if (input.trim()) {
+    const answered = !(intent.kind === "search" && !(reply.items?.length));
+    const now = new Date();
+    await (await collections.assistantLog()).insertOne({
+      _id: randomUUID(),
+      email: session.email,
+      text: input.trim().slice(0, 300),
+      intent: intent.kind,
+      answered,
+      at: now.toISOString(),
+      expiresAt: new Date(now.getTime() + settings.retention.assistantLogDays * 86_400_000),
+    });
+  }
   return { ...reply, intent: intent.kind };
 }
 
@@ -122,7 +145,7 @@ async function answer(intent: AssistantIntent, session: Session, rows: TitleSumm
 
     case "title": {
       const t = byIsbn.get(intent.isbn) ?? (await (await collections.titles()).findOne({ _id: intent.isbn }, { projection: { search: 0 } }).then((d) => (d ? { ...d, compIsbn: d.plan.compIsbn, updatedAt: d.plan.updatedAt } : null)));
-      if (!t) return { text: `I couldn't find ISBN ${intent.isbn} in the catalog.`, suggestions: DEFAULT_SUGGESTIONS };
+      if (!t || !canSeeTitle(session, t)) return { text: `I couldn't find ISBN ${intent.isbn} in the titles you have access to.`, suggestions: DEFAULT_SUGGESTIONS };
       const comp = t.compIsbn ? await (await collections.titles()).findOne({ _id: t.compIsbn }, { projection: { title: 1 } }) : null;
       const gap = t.totals.estimateVsGoal;
       return {
@@ -139,6 +162,7 @@ async function answer(intent: AssistantIntent, session: Session, rows: TitleSumm
     }
 
     case "history": {
+      await assertCanSeeTitle(session, intent.isbn);
       const events = await (await collections.events()).find({ isbn: intent.isbn }).sort({ changedAt: -1 }).limit(LIMIT).toArray();
       const names = new Map((await (await collections.users()).find({}, { projection: { name: 1 } }).toArray()).map((u) => [u._id, u.name]));
       const label: Record<string, string> = { laydownGoal: "goal", laydownEstimate: "estimate", sixMonthEstimate: "6-month", salesNotes: "notes", compIsbn: "comparable", titleNotes: "title notes" };
@@ -183,7 +207,7 @@ async function answer(intent: AssistantIntent, session: Session, rows: TitleSumm
     }
 
     case "search": {
-      const hits = await searchTitles(intent.text, LIMIT);
+      const hits = await searchTitles(intent.text, LIMIT, session);
       return {
         text: hits.length ? `Titles matching "${intent.text}":` : `I couldn't match "${intent.text}". I can answer questions like these:`,
         items: hits.map((h) => ({ isbn: h.isbn, title: h.title, sub: [h.author, h.season, h.format].filter(Boolean).join(" · ") })),

@@ -1,14 +1,14 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, Bot, Hash, MessageSquare, MoreHorizontal, Pencil, Plus, Search, Trash2, UserPlus, Users } from "lucide-react";
+import { BookOpen, Bot, Flag, Hash, MessageSquare, MoreHorizontal, Pencil, Plus, Search, Trash2, UserPlus, Users } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { MentionComposer, MentionText } from "@/components/mention-composer";
 import { Button } from "@/components/ui/button";
-import { Badge, Input, Skeleton, Spinner } from "@/components/ui/misc";
+import { Badge, Input, Skeleton, Spinner, Textarea } from "@/components/ui/misc";
 import { Dialog, DialogContent, Popover, PopoverContent, PopoverTrigger, Tooltip } from "@/components/ui/overlay";
 import { api } from "@/lib/api";
 import { clockTime, initials, personColor } from "@/lib/people";
@@ -361,6 +361,8 @@ export function Room({
     }
   };
 
+  const [reporting, setReporting] = useState<MessageView | null>(null);
+
   const remove = async (id: string) => {
     if (!window.confirm("Delete this message?")) return;
     try {
@@ -517,8 +519,15 @@ export function Room({
                           </div>
                         ) : null}
                       </div>
-                      {!m.deletedAt && (mine || canDelete) && editing?.id !== m._id ? (
+                      {!m.deletedAt && editing?.id !== m._id ? (
                         <div className="absolute -top-2 right-2 hidden gap-0.5 rounded-lg border border-line bg-surface p-0.5 shadow-sm group-hover:flex">
+                          {!mine ? (
+                            <Tooltip content="Report to an admin">
+                              <button type="button" onClick={() => setReporting(m)} className="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-warn" aria-label="Report message">
+                                <Flag className="size-3.5" />
+                              </button>
+                            </Tooltip>
+                          ) : null}
                           {mine ? (
                             <Tooltip content="Edit">
                               <button type="button" onClick={() => setEditing({ id: m._id, text: m.body })} className="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-ink" aria-label="Edit message">
@@ -544,6 +553,7 @@ export function Room({
         )}
       </div>
 
+      <ReportDialog message={reporting} onClose={() => setReporting(null)} />
       <div className={cn("shrink-0 border-t border-line bg-surface", compact ? "px-3 py-2" : "px-5 py-3")}>
         <MentionComposer
           key={initialText ?? ""}
@@ -760,5 +770,46 @@ function MenuButton({ icon, children, onClick, danger }: { icon: React.ReactNode
       {icon}
       {children}
     </button>
+  );
+}
+
+/** Flags a message for the admins (Admin console → Chat moderation). */
+function ReportDialog({ message, onClose }: { message: MessageView | null; onClose: () => void }) {
+  const [reason, setReason] = useState("");
+  const [sending, setSending] = useState(false);
+  const submit = async () => {
+    if (!message) return;
+    setSending(true);
+    try {
+      await api(`/api/chat/messages/${message._id}/report`, { method: "POST", json: { reason } });
+      toast.success("Thanks — the admins will review this message.");
+      setReason("");
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't send the report.");
+    } finally {
+      setSending(false);
+    }
+  };
+  return (
+    <Dialog open={!!message} onOpenChange={(open) => (open ? null : onClose())}>
+      {message ? (
+        <DialogContent title="Report this message" description={`From ${message.authorName}. Only admins see reports.`}>
+          <div className="space-y-3 px-5 py-4">
+            <blockquote className="line-clamp-4 rounded-lg border border-line bg-surface-2/60 px-3 py-2 text-[13px] text-ink-2">{message.body}</blockquote>
+            <Textarea autoFocus rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="What's wrong with it?" maxLength={500} />
+          </div>
+          <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
+            <Button variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button variant="brand" disabled={reason.trim().length < 3 || sending} onClick={() => void submit()}>
+              {sending ? <Spinner className="size-3.5" /> : <Flag />}
+              Send report
+            </Button>
+          </div>
+        </DialogContent>
+      ) : null}
+    </Dialog>
   );
 }

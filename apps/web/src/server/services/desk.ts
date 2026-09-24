@@ -1,3 +1,4 @@
+import { visibleIsbns } from "../auth/scope";
 import { COLLECTIONS } from "@seg/data";
 import type { Session } from "../auth/session";
 import { collections } from "../db";
@@ -49,6 +50,8 @@ export async function changedByOthers(session: Session): Promise<ChangedTitle[]>
     ])
     .toArray();
 
+  const visible = await visibleIsbns(session);
+  if (visible) rows.splice(0, rows.length, ...rows.filter((r) => visible.has(r._id)));
   const emails = [...new Set(rows.flatMap((r) => r.people))];
   const names = new Map(
     (await (await collections.users()).find({ _id: { $in: emails } }, { projection: { name: 1 } }).toArray()).map((u) => [u._id, u.name]),

@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { Tooltip } from "@/components/ui/overlay";
 import { api } from "@/lib/api";
 import { useMe, useUsers } from "@/lib/queries";
+import { useAppSettings } from "@/lib/settings";
 import { useHydrated } from "@/lib/use-hydrated";
 import { useLocalPref } from "@/lib/use-local-pref";
 import { cn } from "@/lib/utils";
@@ -40,7 +41,8 @@ export function AskAbramsDock() {
   // Rendered after hydration: it restores saved windows and session history from the browser.
   const hydrated = useHydrated();
   const pathname = usePathname();
-  if (!hydrated || pathname === "/chat") return null;
+  const on = useAppSettings().features.askAbrams;
+  if (!hydrated || !on || pathname === "/chat" || pathname.startsWith("/admin")) return null;
   return <Dock />;
 }
 
@@ -110,15 +112,16 @@ function Dock() {
   }, [setRaw]);
 
   // Optional desktop alerts (the browser's own notifications — no outside service).
+  const alertsOffered = useAppSettings().notifications.desktopAlertsOffered;
   const previous = useRef<number | null>(null);
   useEffect(() => {
     if (unread.data === undefined) return;
     const was = previous.current;
     previous.current = count;
-    if (was === null || count <= was || alerts !== "on") return;
+    if (was === null || count <= was || alerts !== "on" || !alertsOffered) return;
     if (typeof Notification === "undefined" || Notification.permission !== "granted" || document.visibilityState === "visible") return;
     new Notification("Ask Abrams", { body: `You have ${count} unread message${count === 1 ? "" : "s"}.`, icon: "/brand/abrams-a.png", tag: "ask-abrams" });
-  }, [count, alerts, unread.data]);
+  }, [count, alerts, alertsOffered, unread.data]);
 
   const toggleAlerts = async () => {
     if (alerts === "on") return setAlerts("off");
@@ -219,11 +222,13 @@ function Dock() {
               <span className="truncate text-[14px] font-semibold">Ask Abrams</span>
               {count ? <span className="num rounded-full bg-brand px-1.5 text-[11px] font-semibold leading-[18px] text-white">{count}</span> : null}
             </button>
-            <Tooltip content={alerts === "on" ? "Desktop alerts on" : "Turn on desktop alerts"}>
-              <button type="button" onClick={() => void toggleAlerts()} className="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-ink" aria-label="Desktop alerts">
-                {alerts === "on" ? <Bell className="size-4 text-info" /> : <BellOff className="size-4" />}
-              </button>
-            </Tooltip>
+            {alertsOffered ? (
+              <Tooltip content={alerts === "on" ? "Desktop alerts on" : "Turn on desktop alerts"}>
+                <button type="button" onClick={() => void toggleAlerts()} className="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-ink" aria-label="Desktop alerts">
+                  {alerts === "on" ? <Bell className="size-4 text-info" /> : <BellOff className="size-4" />}
+                </button>
+              </Tooltip>
+            ) : null}
             <Tooltip content="Open full page">
               <Link href="/chat" className="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-ink" aria-label="Open Ask Abrams full page">
                 <Maximize2 className="size-4" />

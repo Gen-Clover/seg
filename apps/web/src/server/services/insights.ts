@@ -1,7 +1,7 @@
 import { buildTitleGrid, channelKey, channelLabel, type EstimateRecord } from "@seg/domain";
 import { toAccountFacts, type EstimateDoc, type TitleAccountFactDoc } from "@seg/data";
 import { collections } from "../db";
-import { domainConfig } from "../env";
+import { domainConfig } from "./settings";
 
 export interface ChannelInsights {
   channels: { key: string; name: string }[];
@@ -29,7 +29,7 @@ export async function channelInsights(): Promise<ChannelInsights> {
   ]);
   const factsBy = group(facts, (f) => f.isbn);
   const estimatesBy = group(estimates, (e) => e.isbn);
-  const config = domainConfig();
+  const config = await domainConfig();
 
   const channelIndex = new Map<string, number>();
   const channels: ChannelInsights["channels"] = [];

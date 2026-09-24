@@ -71,12 +71,25 @@ npm run lint
   changed by others since your last visit, and your @mentions.
 - **Summary**: filterable catalog with a **Dashboard** view (goal vs estimate by season / division /
   imprint / format, coverage, week-by-week trend), exports, upload with preview, meeting report PDF.
-- **Title workspace**: spreadsheet-style grid with autosave, conflict handling, undo / redo,
+- **Title workspace**: the title's cover image (Firebrand/TMM, with a "No cover available" fallback), spreadsheet-style grid with autosave, conflict handling, undo / redo,
   live updates and presence, comments on the title or any row, and full change history with restore.
 - **Ask Abrams**: team chat — Everyone, groups and direct messages with @mentions and ISBN links —
   plus the title comment threads you're part of, in one inbox. Available on every page from the round
   robot button (bottom-right, Alt+A), with the **Abrams Assistant**: ask about deadlines, gaps, a title,
   an ISBN or a season/division and it answers from SEG's own data (rule-based; no AI service).
+
+- **Admin console** (`/admin`, admins only), grouped by module:
+  - *People and access* — users, roles, deactivate/reactivate, access by division/imprint (everyone sees all by
+    default; restricted people see and change only their divisions/imprints), sessions
+    (sign out one device or everywhere, session length), demo accounts on/off.
+  - *Planning controls* — season/title locks, **business rules** (switches, checkbox lists and dropdowns
+    of real values, with a "preview the effect" count; defaults are exactly the original SEG rules),
+    My Desk defaults, account catalog, bulk clear/copy with preview.
+  - *Data and jobs* — data refresh with Run now, BigQuery sync health, job history and retention, demo reset.
+  - *Audit and oversight* — activity log with filters and CSV export, upload log, sign-in log, admin changes.
+  - *Ask Abrams and communication* — chat moderation and reports, announcements (banner or post to
+    Everyone), assistant settings and unanswered questions, notification defaults.
+  - *System* — feature switches, maintenance mode (read-only except admins), branding and text, health.
 
 SEG stands for **Seasonal Estimate Grid**. The look follows abramsbooks.com (Abrams red, warm greys);
 no third-party APIs are used.

@@ -1,6 +1,7 @@
 import { BigQuery } from "@google-cloud/bigquery";
 import type { BigQueryConfig } from "@seg/data";
-import { domainConfig, env } from "./env";
+import { DEFAULT_DOMAIN_CONFIG } from "@seg/domain";
+import { env } from "./env";
 import { HttpError } from "./http";
 
 const globalForBq = globalThis as unknown as { __segBq?: BigQuery };
@@ -27,6 +28,7 @@ export function bigQueryConfig(): BigQueryConfig {
     sourceDataset: e.BQ_SOURCE_DATASET,
     appDataset: e.BQ_APP_DATASET,
     location: e.BQ_LOCATION,
-    minSeasonYear: domainConfig().minSeasonYear,
+    // The ingestion job passes the admin-set first season year; this is the configured default.
+    minSeasonYear: env().MIN_SEASON_YEAR ?? DEFAULT_DOMAIN_CONFIG.minSeasonYear,
   };
 }

@@ -4,6 +4,7 @@ import type { ChatMessageDoc, ChatRoomDoc, NotificationDoc } from "@seg/data";
 import type { Session } from "../auth/session";
 import { collections } from "../db";
 import { HttpError } from "../http";
+import { getSettings } from "./settings";
 import { scheduleWriteback } from "./writeback";
 
 export const EVERYONE = "everyone";
@@ -69,7 +70,7 @@ async function roomFor(roomId: string, session: Session): Promise<ChatRoomDoc> {
 export async function listRooms(session: Session): Promise<RoomView[]> {
   await ensureEveryone();
   const [rooms, reads, names] = await Promise.all([
-    (await collections.chatRooms()).find({ $or: [{ _id: EVERYONE }, { members: session.email }] }, { projection: { syncedAt: 0 } }).toArray(),
+    (await collections.chatRooms()).find({ $or: [{ _id: EVERYONE }, { members: session.email }], archivedAt: { $in: [null, undefined] } }, { projection: { syncedAt: 0 } }).toArray(),
     (await collections.chatReads()).find({ email: session.email }).toArray(),
     activeUsers(),
   ]);
@@ -154,6 +155,7 @@ async function titleRefs(body: string): Promise<{ isbn: string; title: string }[
 
 export async function postMessage(roomId: string, session: Session, input: z.infer<typeof newMessageSchema>): Promise<MessageView> {
   const room = await roomFor(roomId, session);
+  if (room.archivedAt) throw new HttpError(423, "This group was archived by an administrator and is read-only.");
   const names = await activeUsers();
   const eligible = room.type === "everyone" ? [...names.keys()] : room.members;
   const mentions = [...new Set(input.mentions.map((m) => m.toLowerCase()))].filter((m) => m !== session.email && eligible.includes(m));
@@ -180,12 +182,15 @@ export async function postMessage(roomId: string, session: Session, input: z.inf
   // Reading your own room: my own message marks it read.
   await markRead(roomId, session, now);
 
-  if (mentions.length) {
+  const prefs = (await getSettings()).notifications;
+  // Direct messages notify the other person when the admin has switched that on.
+  const dmRecipients = room.type === "direct" && prefs.directMessages ? room.members.filter((m) => m !== session.email && !mentions.includes(m)) : [];
+  if ((prefs.mentions && mentions.length) || dmRecipients.length) {
     const roomName = room.type === "direct" ? "a direct message" : room.name;
-    const notes: NotificationDoc[] = mentions.map((email) => ({
+    const notes: NotificationDoc[] = [...(prefs.mentions ? mentions : []), ...dmRecipients].map((email) => ({
       _id: randomUUID(),
       email,
-      type: "chat_mention",
+      type: dmRecipients.includes(email) ? "chat_dm" : "chat_mention",
       commentId: message._id,
       isbn: "",
       threadKey: "",
@@ -365,4 +370,29 @@ export async function myTitleThreads(session: Session): Promise<TitleThreadView[
     excerpt: r.body.length > 120 ? `${r.body.slice(0, 120)}…` : r.body,
     count: r.count,
   }));
+}
+
+export const reportSchema = z.object({ reason: z.string().trim().min(3, "Tell the admins what's wrong.").max(500) });
+
+/** Flags a message for admin review (Ask Abrams → Chat moderation). */
+export async function reportMessage(id: string, session: Session, reason: string): Promise<void> {
+  const msg = await (await collections.chatMessages()).findOne({ _id: id });
+  if (!msg || msg.deletedAt) throw new HttpError(404, "That message no longer exists.");
+  await roomFor(msg.roomId, session);
+  const reports = await collections.chatReports();
+  if (await reports.countDocuments({ messageId: id, reporterEmail: session.email, status: "open" }, { limit: 1 })) return;
+  await reports.insertOne({
+    _id: randomUUID(),
+    messageId: id,
+    roomId: msg.roomId,
+    excerpt: msg.body.slice(0, 280),
+    authorEmail: msg.authorEmail,
+    reporterEmail: session.email,
+    reporterName: session.name,
+    reason,
+    at: new Date().toISOString(),
+    status: "open",
+    resolvedBy: null,
+    resolvedAt: null,
+  });
 }

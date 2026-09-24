@@ -6,4 +6,4 @@ import { askAssistant } from "@/server/services/assistant";
 export const POST = route(async ({ request, session }) => {
   const { text } = await readJson(request, z.object({ text: z.string().max(500) }));
   return askAssistant(text, session);
-});
+}, { feature: "askAbrams" });

@@ -8,12 +8,14 @@ import { Button } from "@/components/ui/button";
 import { Badge, Spinner } from "@/components/ui/misc";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/overlay";
 import { useAccountSearch } from "@/lib/queries";
+import { useDomainConfig } from "@/lib/settings";
 
 /** Add a channel / organization / account row that isn't on the grid yet (legacy "Add Row"). */
 export function AddAccountDialog({ onPick }: { onPick: (ref: AccountRef) => void }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const search = useAccountSearch(q, open);
+  const config = useDomainConfig();
   const accounts = search.data?.accounts ?? [];
 
   return (
@@ -61,7 +63,7 @@ export function AddAccountDialog({ onPick }: { onPick: (ref: AccountRef) => void
                     {a.orgName ?? "No organization"} · {a.channelName ?? a.channelId}
                   </div>
                 </div>
-                {!isAccountLevelChannel(a.channelId) ? (
+                {!isAccountLevelChannel(a.channelId, config) ? (
                   <Badge className="shrink-0" title="This channel is planned at organization level">
                     Org-level channel
                   </Badge>

@@ -9,11 +9,22 @@ export function BrandMark({ className }: { className?: string }) {
 }
 
 /** SEG = Seasonal Estimate Grid. */
-export function BrandName({ className, inverted }: { className?: string; inverted?: boolean }) {
+export function BrandName({
+  className,
+  inverted,
+  name = "SEG",
+  subtitle = "Seasonal Estimate Grid",
+}: {
+  className?: string;
+  inverted?: boolean;
+  /** Admin-set app name and subtitle (branding settings). */
+  name?: string;
+  subtitle?: string;
+}) {
   return (
     <div className={cn("leading-tight", className)}>
-      <div className={cn("font-display text-[15px] font-bold tracking-[0.12em]", inverted ? "text-white" : "text-ink")}>SEG</div>
-      <div className={cn("text-[11px]", inverted ? "text-white/65" : "text-muted")}>Seasonal Estimate Grid</div>
+      <div className={cn("font-display text-[15px] font-bold tracking-[0.12em]", inverted ? "text-white" : "text-ink")}>{name}</div>
+      {subtitle ? <div className={cn("text-[11px]", inverted ? "text-white/65" : "text-muted")}>{subtitle}</div> : null}
     </div>
   );
 }

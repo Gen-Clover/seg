@@ -109,7 +109,7 @@ function Row({ k, v }: { k: string; v: string }) {
   );
 }
 
-function CompPicker({ isbn, hasComp, onPick, primary }: { isbn: string; hasComp: boolean; onPick: (isbn: string) => void; primary?: boolean }) {
+export function CompPicker({ isbn, hasComp, onPick, primary }: { isbn: string; hasComp: boolean; onPick: (isbn: string) => void; primary?: boolean }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const search = useTitleSearch(q);

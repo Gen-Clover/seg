@@ -27,6 +27,7 @@ export interface CellEdit {
   value: CellValue;
   /** The saved value this edit was made over (sent so the server can detect conflicting edits). */
   expected: CellValue;
+  source?: "grid" | "restore";
 }
 
 /** An edit the server refused because someone else changed the cell first. */
@@ -102,7 +103,7 @@ export function useAutosave(isbn: string, canEdit: boolean) {
         {
           method: "PATCH",
           json: {
-            changes: [...batch.values()].map(({ level, ref, field, value, expected }) => ({ level, ref, field, value, expected })),
+            changes: [...batch.values()].map(({ level, ref, field, value, expected, source }) => ({ level, ref, field, value, expected, source })),
           },
           keepalive: true,
         },
@@ -165,7 +166,7 @@ export function useAutosave(isbn: string, canEdit: boolean) {
   }, [flush]);
 
   const edit = useCallback(
-    (level: Level, ref: AccountRef, field: EstimateField, value: CellValue) => {
+    (level: Level, ref: AccountRef, field: EstimateField, value: CellValue, source: "grid" | "restore" = "grid") => {
       if (!canEdit) return;
       const r = refForLevel(level, ref);
       const id = estimateId(isbn, level, r);
@@ -178,7 +179,7 @@ export function useAutosave(isbn: string, canEdit: boolean) {
         : inflight.current.has(k)
           ? inflight.current.get(k)!.value
           : savedValue(id, field);
-      pending.current.set(k, { id, level, ref: r, field, value, expected });
+      pending.current.set(k, { id, level, ref: r, field, value, expected, source });
       setConflicts((prev) => {
         if (!prev.has(k)) return prev;
         const next = new Map(prev);

@@ -71,7 +71,7 @@ npm run lint
   changed by others since your last visit, and your @mentions.
 - **Summary**: filterable catalog with a **Dashboard** view (goal vs estimate by season / division /
   imprint / format, coverage, week-by-week trend), exports, upload with preview, meeting report PDF.
-- **Title workspace**: spreadsheet-style grid with autosave, conflict handling, undo / redo,
+- **Title workspace**: the title's cover image (Firebrand/TMM, with a "No cover available" fallback), spreadsheet-style grid with autosave, conflict handling, undo / redo,
   live updates and presence, comments on the title or any row, and full change history with restore.
 - **Ask Abrams**: team chat — Everyone, groups and direct messages with @mentions and ISBN links —
   plus the title comment threads you're part of, in one inbox. Available on every page from the round

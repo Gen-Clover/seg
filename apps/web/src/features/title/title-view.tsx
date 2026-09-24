@@ -48,6 +48,7 @@ import { Popover, PopoverContent, PopoverTrigger, Tooltip } from "@/components/u
 import { api } from "@/lib/api";
 import { initials, personColor } from "@/lib/people";
 import { editBlock, useAppSettings, useDomainConfig } from "@/lib/settings";
+import { TitleCover } from "./title-cover";
 import type { Session } from "@/server/auth/session";
 import { queryKeys, useComments, useMe, usePrefetchTitle, useSummary, useTitle, type TitleDetail } from "@/lib/queries";
 import type { Viewer } from "@/server/services/live";
@@ -852,32 +853,35 @@ function DetailsCard({
           </div>
         ) : null}
       </div>
-      <div className="flex flex-col">
-        <div className="mb-2.5 flex items-baseline justify-between gap-2">
-          <label htmlFor="title-notes" className="text-[13px] font-semibold">
-            Title notes
-          </label>
-          {canEdit && noteStatus ? (
-            <span className={cn("flex items-center gap-1 text-xs", noteStatus === "Saving…" ? "text-muted" : "text-ok")}>
-              {noteStatus === "Saving…" ? <Spinner className="size-3" /> : <Check className="size-3.5" />}
-              {noteStatus}
-            </span>
+      <div className="flex flex-col gap-3">
+        <TitleCover isbn={t.isbn} title={t.title} />
+        <div className="flex flex-col">
+          <div className="mb-2.5 flex items-baseline justify-between gap-2">
+            <label htmlFor="title-notes" className="text-[13px] font-semibold">
+              Title notes
+            </label>
+            {canEdit && noteStatus ? (
+              <span className={cn("flex items-center gap-1 text-xs", noteStatus === "Saving…" ? "text-muted" : "text-ok")}>
+                {noteStatus === "Saving…" ? <Spinner className="size-3" /> : <Check className="size-3.5" />}
+                {noteStatus}
+              </span>
+            ) : null}
+          </div>
+          <Textarea
+            id="title-notes"
+            value={notes}
+            maxLength={notesLimit}
+            onChange={(e) => setNotes(e.target.value)}
+            readOnly={!canEdit}
+            placeholder={canEdit ? "Add a note for the whole title… (saved automatically)" : "No notes"}
+            className="field-sizing-content max-h-64 min-h-20 focus:border-info/60 focus:ring-info/15"
+          />
+          {canEdit ? (
+            <div className={cn("mt-1 text-right text-[11px]", notes.length > notesLimit * 0.9 ? "text-warn" : "text-subtle")}>
+              {fmtInt(notes.length)} / {fmtInt(notesLimit)}
+            </div>
           ) : null}
         </div>
-        <Textarea
-          id="title-notes"
-          value={notes}
-          maxLength={notesLimit}
-          onChange={(e) => setNotes(e.target.value)}
-          readOnly={!canEdit}
-          placeholder={canEdit ? "Add a note for the whole title… (saved automatically)" : "No notes"}
-          className="field-sizing-content max-h-64 min-h-20 focus:border-info/60 focus:ring-info/15"
-        />
-        {canEdit ? (
-          <div className={cn("mt-1 text-right text-[11px]", notes.length > notesLimit * 0.9 ? "text-warn" : "text-subtle")}>
-            {fmtInt(notes.length)} / {fmtInt(notesLimit)}
-          </div>
-        ) : null}
       </div>
     </Card>
   );

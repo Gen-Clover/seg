@@ -14,6 +14,10 @@ Items marked **(config)** are environment changes only; **(code)** needs a small
 - [ ] Run `buildFactsSql` / `buildStatsSql` against live data; compare a sample of titles with the
       legacy app's numbers.
 - [ ] Schedule ingestion nightly (client scheduler or BigQuery scheduled query + app job).
+- [ ] **Demo limitation:** the demo Google Cloud project is on BigQuery's free tier, which refuses streaming inserts,
+      so on the demo, write-back fails and changes stay queued in MongoDB (Admin console → BigQuery sync health).
+      On the client's billed project this works as is: after cutover press **Send now** on that page and confirm the
+      queue empties with no error. Also check the SEG datasets have no default table expiry (the free tier sets 60 days).
 - [ ] **(config)** `WRITEBACK=bigquery`; create `SEG_ESTIMATE_EVENTS` and the `SEG_ESTIMATES_CURRENT` view.
       (`SEG_COMMENTS`, `SEG_CHAT_ROOMS` and `SEG_CHAT_MESSAGES` are created by the app on first use; the service account needs table-create rights
       on the app dataset, or create it up front from `COMMENTS_SCHEMA`.)

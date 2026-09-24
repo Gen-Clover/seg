@@ -399,6 +399,7 @@ export function TitleView({ isbn, user }: { isbn: string; user: Pick<Session, "r
                 status={autosave.status}
                 lastSavedAt={autosave.lastSavedAt}
                 compSaving={plan.isPending && plan.variables?.compIsbn !== undefined}
+                viewers={live.viewers}
                 onComp={changeComp}
                 onExit={() => setFull(false)}
               />
@@ -514,7 +515,7 @@ const SHORTCUTS: [string, string][] = [
   ["Enter or F2", "Edit the selected cell"],
   ["Type a number", "Replace the value"],
   ["Delete", "Clear the cell"],
-  ["Arrows / Tab", "Move between cells"],
+  ["Arrows / Tab", "Move between cells (also saves the cell you are typing in)"],
   ["Ctrl V", "Paste a block copied from Excel"],
   ["Ctrl C", "Copy the cell"],
   ["Ctrl Z / Ctrl Y", "Undo / redo"],
@@ -578,9 +579,11 @@ function FullScreenHeader({
   status,
   lastSavedAt,
   compSaving,
+  viewers,
   onComp,
   onExit,
 }: {
+  viewers: Viewer[];
   data: TitleDetail;
   totals: ReturnType<typeof titleTotals>;
   canEdit: boolean;
@@ -634,7 +637,7 @@ function FullScreenHeader({
           </Button>
         </Tooltip>
       </div>
-      <div className="min-w-0 max-w-[340px]">
+      <div className="min-w-0 max-w-[260px]">
         <div className="truncate text-[15px] font-semibold" title={t.title}>
           {t.title}
         </div>
@@ -644,18 +647,22 @@ function FullScreenHeader({
           {t.format ? <span>· {t.format}</span> : null}
         </div>
       </div>
-      <div className="hidden items-center gap-5 border-l border-line pl-4 xl:flex">
-        {stat("Initial orders", fmtInt(totals.initialOrder))}
-        {stat("Laydown goal", fmtInt(totals.laydownGoal))}
-        {stat("Laydown estimate", fmtInt(totals.laydownEstimate))}
+      <div className="hidden items-center gap-4 border-l border-line pl-4 xl:flex">
+        {stat("Initial", fmtInt(totals.initialOrder))}
+        {stat("Goal", fmtInt(totals.laydownGoal))}
+        {stat("Estimate", fmtInt(totals.laydownEstimate))}
         {stat("6-month", fmtInt(totals.sixMonthEstimate))}
         {stat("Vs goal", gap === null ? "—" : fmtSigned(-gap), gap === null ? "text-muted" : gap > 0 ? "text-warn" : gap < 0 ? "text-ok" : undefined)}
       </div>
       <div className="ml-auto flex min-w-0 items-center gap-2">
+        <div data-testid="fullscreen-presence" className="contents">
+          <Presence viewers={viewers} />
+        </div>
+        {viewers.length ? <span className="mx-1 h-6 w-px bg-line" /> : null}
         <div className="min-w-0 text-right leading-tight" data-testid="fullscreen-comp">
           <div className="text-[10.5px] uppercase tracking-wide text-subtle">Comparable title</div>
           {data.comp ? (
-            <div className="max-w-[260px] truncate text-[13px] font-medium" title={`${data.comp.title} (${data.comp.isbn})`}>
+            <div className="max-w-[220px] truncate text-[13px] font-medium" title={`${data.comp.title} (${data.comp.isbn})`}>
               {data.comp.title} <span className="num text-xs font-normal text-muted">{data.comp.isbn}</span>
             </div>
           ) : (

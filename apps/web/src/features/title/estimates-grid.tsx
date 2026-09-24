@@ -95,6 +95,9 @@ const SCROLLBAR_ROOM = 12;
 const gridWidth = GRID_COLS.reduce((s, c) => s + c.width, 0);
 const editableCol = (col: GridCol) => col.kind === "estimate" || col.kind === "notes";
 
+/** Arrow key → [rows, columns] to move after saving the cell being edited. */
+const ARROWS: Record<string, [number, number]> = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
+
 export const EstimatesGrid = forwardRef<EstimatesGridHandle, Props>(function EstimatesGrid(
   {
     fill,
@@ -123,7 +126,12 @@ export const EstimatesGrid = forwardRef<EstimatesGridHandle, Props>(function Est
   const salesNoteMax = useAppSettings().rules.salesNoteMaxLength;
   const scrollRef = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState<Active>({ r: 0, c: 2 });
-  const [editing, setEditing] = useState<{ draft: string } | null>(null);
+  /**
+   * The cell being edited. "type" = started by typing over the cell (arrows save and move, like
+   * Excel's Enter mode); "edit" = opened with Enter, F2 or a double-click to change the value
+   * (left / right move the cursor until it reaches either end).
+   */
+  const [editing, setEditing] = useState<{ draft: string; mode: "type" | "edit" } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // rows[0] is the "All channels" total, pinned under the header; the rest is virtualized.
@@ -229,7 +237,7 @@ export const EstimatesGrid = forwardRef<EstimatesGridHandle, Props>(function Est
     const row = rows[active.r];
     const col = GRID_COLS[active.c];
     if (!isEditable(row, col)) return;
-    setEditing({ draft: initial ?? cellValue(row!, col!) });
+    setEditing({ draft: initial ?? cellValue(row!, col!), mode: initial === undefined ? "edit" : "type" });
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -386,7 +394,7 @@ export const EstimatesGrid = forwardRef<EstimatesGridHandle, Props>(function Est
               }}
               onDoubleClick={() => {
                 setActive({ r: index, c: ci });
-                if (isEditable(row, col)) setEditing({ draft: cellValue(row, col) });
+                if (isEditable(row, col)) setEditing({ draft: cellValue(row, col), mode: "edit" });
                 else if (col.kind === "name" && row.kind !== "total") onToggle(row.key);
               }}
             >
@@ -396,7 +404,7 @@ export const EstimatesGrid = forwardRef<EstimatesGridHandle, Props>(function Est
                   value={editing.draft}
                   inputMode={col.kind === "estimate" ? "numeric" : "text"}
                   maxLength={col.kind === "notes" ? salesNoteMax : undefined}
-                  onChange={(e) => setEditing({ draft: col.kind === "estimate" ? e.target.value.replace(/[^0-9,]/g, "") : e.target.value })}
+                  onChange={(e) => setEditing({ ...editing, draft: col.kind === "estimate" ? e.target.value.replace(/[^0-9,]/g, "") : e.target.value })}
                   onBlur={() => commit(editing.draft)}
                   onKeyDown={(e) => {
                     e.stopPropagation();
@@ -410,6 +418,18 @@ export const EstimatesGrid = forwardRef<EstimatesGridHandle, Props>(function Est
                       e.preventDefault();
                       setEditing(null);
                       scrollRef.current?.focus();
+                    } else if (ARROWS[e.key] && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+                      // Arrows save and move on, like Tab. Up / down always; left / right straight away in a
+                      // number typed over the cell, otherwise once the cursor is at the start / end of the text.
+                      const el = e.currentTarget;
+                      const caretAtStart = el.selectionStart === 0 && el.selectionEnd === 0;
+                      const caretAtEnd = el.selectionStart === el.value.length && el.selectionEnd === el.value.length;
+                      const vertical = e.key === "ArrowUp" || e.key === "ArrowDown";
+                      const typed = editing.mode === "type" && col.kind === "estimate";
+                      if (vertical || typed || (e.key === "ArrowLeft" && caretAtStart) || (e.key === "ArrowRight" && caretAtEnd)) {
+                        e.preventDefault();
+                        commit(editing.draft, ARROWS[e.key]);
+                      }
                     }
                   }}
                   className={cn(
@@ -620,6 +640,7 @@ function Cell({
   const cell = (
     <div
       role="gridcell"
+      aria-selected={active}
       className={base}
       onMouseDown={onMouseDown}
       onDoubleClick={onDoubleClick}

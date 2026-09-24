@@ -23,7 +23,7 @@ export const maxDuration = 300;
 type Ctx = { request: Request; session: Session; parts: string[]; search: URLSearchParams };
 
 /** Sections that are saved as a whole from their admin page. Locks, announcements and demo have their own actions. */
-const EDITABLE: SettingsSection[] = ["rules", "desk", "sessions", "notifications", "assistant", "features", "maintenance", "branding", "covers", "retention"];
+const EDITABLE: SettingsSection[] = ["rules", "desk", "sessions", "notifications", "assistant", "features", "maintenance", "branding", "covers", "retention", "workGroups"];
 
 const activityFilter = (s: URLSearchParams): ActivityFilter => ({
   person: s.get("person") || undefined,

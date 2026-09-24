@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { DEFAULT_DOMAIN_CONFIG, type DomainConfig } from "@seg/domain";
+import {
+  DEFAULT_DOMAIN_CONFIG,
+  GROUP_DATE_FIELDS,
+  GROUP_FLAG_FIELDS,
+  GROUP_NUMBER_FIELDS,
+  GROUP_TEXT_FIELDS,
+  type DomainConfig,
+} from "@seg/domain";
 import type { Session } from "../auth/session";
 import { collections } from "../db";
 import { env } from "../env";
@@ -23,6 +30,30 @@ const lockSchema = z.object({
   lockedBy: z.string(),
   lockedByName: z.string(),
   lockedAt: z.string(),
+});
+
+const text = z.string().trim().min(1).max(120);
+const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable();
+const num = z.number().finite().nullable();
+/** One work-group rule (see packages/domain/src/workgroups.ts). */
+const groupRuleSchema = z.union([
+  z.object({ field: z.enum(GROUP_TEXT_FIELDS), op: z.enum(["in", "notIn"]), values: z.array(text).max(200) }),
+  z.object({ field: z.enum(GROUP_DATE_FIELDS), op: z.enum(["before", "after", "between"]), from: isoDay, to: isoDay }),
+  z.object({ field: z.enum(GROUP_DATE_FIELDS), op: z.enum(["nextDays", "pastDays"]), days: z.number().int().min(0).max(3650) }),
+  z.object({ field: z.enum([...GROUP_DATE_FIELDS, ...GROUP_NUMBER_FIELDS]), op: z.enum(["isSet", "isNotSet"]) }),
+  z.object({ field: z.enum(GROUP_NUMBER_FIELDS), op: z.enum(["atLeast", "atMost", "between"]), min: num, max: num }),
+  z.object({ field: z.enum(GROUP_FLAG_FIELDS), op: z.literal("is"), value: z.boolean() }),
+]);
+const workGroupSchema = z.object({
+  id: z.string().min(1).max(60),
+  name: z.string().trim().min(1).max(40),
+  /** Shown to every user (members is then ignored). */
+  everyone: z.boolean().default(false),
+  members: z.array(z.string().trim().toLowerCase()).max(500).default([]),
+  match: z.enum(["all", "any"]).default("all"),
+  rules: z.array(groupRuleSchema).max(20).default([]),
+  createdBy: z.string().default(""),
+  updatedAt: z.string().nullable().default(null),
 });
 
 const announcementSchema = z.object({
@@ -145,6 +176,8 @@ export function settingsSchema() {
       })
       .prefault({}),
     announcements: z.array(announcementSchema).default([]),
+    /** My Desk work groups (Admin console → Work groups). Not public: people only get their own. */
+    workGroups: z.array(workGroupSchema).max(200).default([]),
     retention: z
       .object({
         jobHistoryDays: z.number().int().min(7).max(3650).default(90),
@@ -159,6 +192,15 @@ export type AppSettings = z.infer<ReturnType<typeof settingsSchema>>;
 export type SettingsSection = keyof AppSettings;
 export type Lock = z.infer<typeof lockSchema>;
 export type Announcement = z.infer<typeof announcementSchema>;
+export type WorkGroup = z.infer<typeof workGroupSchema>;
+
+/** The work groups a person sees as My Desk tabs. */
+export async function workGroupsFor(email: string): Promise<Pick<WorkGroup, "id" | "name" | "match" | "rules">[]> {
+  const me = email.toLowerCase();
+  return (await getSettings()).workGroups
+    .filter((g) => g.everyone || g.members.includes(me))
+    .map(({ id, name, match, rules }) => ({ id, name, match, rules }));
+}
 
 interface Stored {
   _id: "app";

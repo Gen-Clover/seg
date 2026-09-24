@@ -6,6 +6,7 @@ import { DemoResetPage, JobsPage, RefreshPage, SyncPage } from "./data";
 import { AccessPage, DemoAccountsPage, SessionsPage, UsersPage } from "./people";
 import { AccountsPage, BulkPage, DeskDefaultsPage, LocksPage, RulesPage } from "./planning";
 import { WorkGroupsPage } from "./work-groups";
+import { ProductGuidePage } from "./guide/guide-page";
 import { BrandingPage, FeaturesPage, HealthPage, MaintenancePage } from "./system";
 
 const PAGES: Record<string, () => React.ReactNode> = {
@@ -31,6 +32,7 @@ const PAGES: Record<string, () => React.ReactNode> = {
   announcements: AnnouncementsPage,
   assistant: AssistantPage,
   notifications: NotificationsPage,
+  guide: ProductGuidePage,
   features: FeaturesPage,
   maintenance: MaintenancePage,
   branding: BrandingPage,

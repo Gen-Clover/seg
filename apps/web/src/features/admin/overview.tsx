@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowRight, ShieldCheck } from "lucide-react";
+import { ArrowRight, BookOpen, ShieldCheck } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { Badge, Card } from "@/components/ui/misc";
 import { cn, fmtInt, timeAgo } from "@/lib/utils";
@@ -70,7 +71,17 @@ export function AdminOverview() {
         icon={ShieldCheck}
         title="Admin console"
         description="Everything you can control in SEG, grouped by module. Changes are saved to the database, recorded in Admin changes, and copied to BigQuery."
-        actions={o ? <LastSaved meta={{ updatedAt: o.settingsUpdatedAt, updatedBy: o.settingsUpdatedBy }} /> : null}
+        actions={
+          <>
+            {o ? <LastSaved meta={{ updatedAt: o.settingsUpdatedAt, updatedBy: o.settingsUpdatedBy }} /> : null}
+            <Button asChild>
+              <Link href="/admin/guide">
+                <BookOpen />
+                Product guide
+              </Link>
+            </Button>
+          </>
+        }
       />
       {!o ? (
         <Card>

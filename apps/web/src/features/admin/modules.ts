@@ -1,5 +1,6 @@
 import {
   Activity,
+  BookOpen,
   BellRing,
   Bot,
   Building2,
@@ -115,9 +116,10 @@ export const ADMIN_MODULES: AdminModule[] = [
   {
     id: "system",
     label: "System",
-    description: "Feature switches, maintenance mode, branding and health.",
+    description: "Product guide, feature switches, maintenance mode, branding and health.",
     icon: Wrench,
     pages: [
+      { slug: "guide", label: "Product guide", description: "Everything about SEG: features, how to use every screen, admin how-tos, shortcuts and FAQ — with search and PDF download.", icon: BookOpen },
       { slug: "features", label: "Feature switches", description: "Turn modules on or off for this environment.", icon: ToggleRight },
       { slug: "maintenance", label: "Maintenance mode", description: "Read-only for everyone but admins, with a banner.", icon: Wrench },
       { slug: "branding", label: "Branding and text", description: "App name, sign-in wording and the Main menu link.", icon: Palette },

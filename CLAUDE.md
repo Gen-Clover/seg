@@ -9,4 +9,6 @@
 - Every API route uses `route()` from `apps/web/src/server/http.ts` (session + role checks).
 - Demo-only behaviour must be switchable by config and listed in `docs/PRODUCTION_CUTOVER.md`.
 - `old/` holds legacy production code (reference only) and is never committed.
+- The admin **Product guide** (`apps/web/src/features/admin/guide/content.ts`) is written by hand and
+  updated **only when the product owner asks** — never automatically with releases.
 - Checks: `npm test`, `npm run typecheck`, `npm run lint`.

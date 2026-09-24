@@ -92,7 +92,8 @@ npm run lint
   - *Audit and oversight* — activity log with filters and CSV export, upload log, sign-in log, admin changes.
   - *Ask Abrams and communication* — chat moderation and reports, announcements (banner or post to
     Everyone), assistant settings and unanswered questions, notification defaults.
-  - *System* — feature switches, maintenance mode (read-only except admins), branding and text, health.
+  - *System* — **product guide** (full user guide with search and PDF download; updated only on request),
+    feature switches, maintenance mode (read-only except admins), branding and text, health.
 
 SEG stands for **Seasonal Estimate Grid**. The look follows abramsbooks.com (Abrams red, warm greys);
 no third-party APIs are used.

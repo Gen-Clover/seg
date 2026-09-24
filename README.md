@@ -68,7 +68,9 @@ npm run lint
 ## Features
 
 - **My Desk** (home): titles due soon without estimates, below goal, without a comparable title,
-  changed by others since your last visit, and your @mentions.
+  changed by others since your last visit, and your @mentions — plus **work group** tabs an admin assigns
+  (titles picked by rules). Each person drags tabs into their own order, saved to their account; arrows
+  scroll the tabs when there are more than fit.
 - **Summary**: filterable catalog with a **Dashboard** view (goal vs estimate by season / division /
   imprint / format, coverage, week-by-week trend), exports, upload with preview, meeting report PDF.
 - **Title workspace**: the title's cover image (Firebrand/TMM, with a "No cover available" fallback), spreadsheet-style grid with autosave, conflict handling, undo / redo,
@@ -84,7 +86,8 @@ npm run lint
     (sign out one device or everywhere, session length), demo accounts on/off.
   - *Planning controls* — season/title locks, **business rules** (switches, checkbox lists and dropdowns
     of real values, with a "preview the effect" count; defaults are exactly the original SEG rules),
-    My Desk defaults, account catalog, bulk clear/copy with preview.
+    work groups (named My Desk tabs for chosen people, built from rules on any title field), My Desk
+    defaults, account catalog, bulk clear/copy with preview.
   - *Data and jobs* — data refresh with Run now, BigQuery sync health, job history and retention, demo reset.
   - *Audit and oversight* — activity log with filters and CSV export, upload log, sign-in log, admin changes.
   - *Ask Abrams and communication* — chat moderation and reports, announcements (banner or post to

@@ -4,7 +4,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlarmClock, ArrowRight, AtSign, CheckCheck, GitCompareArrows, PlayCircle, TrendingDown, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { belowGoal, dueSoon, withoutComparable, type DueItem, type GapItem, type NoCompItem } from "@seg/domain";
+import { belowGoal, dueSoon, groupTitles, missingTotals, withoutComparable, type DueItem, type GapItem, type NoCompItem } from "@seg/domain";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, Skeleton } from "@/components/ui/misc";
 import { MultiSelect } from "@/components/ui/multi-select";
@@ -24,8 +25,10 @@ import { useAppSettings } from "@/lib/settings";
 import { useLocalPref } from "@/lib/use-local-pref";
 import { cn, fmtDate, fmtInt, timeAgo } from "@/lib/utils";
 import { setWorklist } from "@/lib/worklist";
+import { DeskTabs, type DeskTab } from "./desk-tabs";
 
-type Tab = "due" | "gap" | "comp" | "changed" | "mentions";
+/** Built-in lists ("due", "gap", "comp", "changed", "mentions") or a work group ("g:<id>"). */
+type Tab = string;
 
 const WINDOWS = [7, 14, 30] as const;
 
@@ -47,6 +50,7 @@ export function DeskView({ name }: { name: string }) {
   const desk = useDesk();
   const unread = useUnreadCount();
   const [tab, setTab] = useState<Tab>("due");
+  const [order, setOrder] = useState<string[] | null>(null);
   const deskDefaults = useAppSettings().desk;
   // The admin sets the default window; each person can still pick another one.
   const [windowPref, setWindowPref] = useLocalPref("seg-desk-window", String(deskDefaults.dueWindowDays));
@@ -112,13 +116,42 @@ export function DeskView({ name }: { name: string }) {
     { tab: "mentions", label: "Mentions", value: unread.data?.unread ?? 0, sub: "unread", icon: AtSign, tone: unread.data?.unread ? "text-info" : undefined },
   ];
 
-  const tabIsbns: Record<Exclude<Tab, "mentions">, string[]> = {
+  // Work groups set up by an admin: each is a tab with the titles matching its rules.
+  const groups = useMemo(() => desk.data?.groups ?? [], [desk.data]);
+  const groupLists = useMemo(() => new Map(groups.map((g) => [`g:${g.id}`, groupTitles(titles, g, today)])), [groups, titles, today]);
+
+  const tabIsbns: Record<string, string[]> = {
     due: lists.due.map((d) => d.isbn),
     gap: lists.gap.map((d) => d.isbn),
     comp: lists.comp.map((d) => d.isbn),
     changed: lists.changed.filter((c) => byIsbn.has(c.isbn)).map((d) => d.isbn),
+    ...Object.fromEntries([...groupLists].map(([id, list]) => [id, list.map((t) => t.isbn)])),
   };
-  const tabLabel: Record<Tab, string> = { due: "Due soon", gap: "Below goal", comp: "No comparable", changed: "Changed by others", mentions: "Mentions" };
+  const tabLabel: Record<string, string> = {
+    due: "Due soon",
+    gap: "Below goal",
+    comp: "No comparable",
+    changed: "Changed by others",
+    mentions: "Mentions",
+    ...Object.fromEntries(groups.map((g) => [`g:${g.id}`, g.name])),
+  };
+
+  // Tab order: the person's saved order, then any tabs they haven't placed yet, in the default order.
+  const defaultTabs: DeskTab[] = [
+    ...kpis.map((k) => ({ id: k.tab, label: k.label, count: k.value })),
+    ...groups.map((g) => ({ id: `g:${g.id}`, label: g.name, count: groupLists.get(`g:${g.id}`)?.length ?? 0, group: true })),
+  ];
+  const savedOrder = order ?? desk.data?.tabOrder ?? [];
+  const rank = new Map(savedOrder.map((id, i) => [id, i]));
+  const orderedTabs = defaultTabs
+    .map((t, i) => ({ t, key: rank.get(t.id) ?? 1000 + i }))
+    .sort((a, b) => a.key - b.key)
+    .map((x) => x.t);
+  const saveOrder = (ids: string[]) => {
+    setOrder(ids);
+    api("/api/me/prefs", { method: "PUT", json: { deskTabs: ids } }).catch(() => toast.error("Couldn't save the tab order. It will reset next time."));
+  };
+  const current = orderedTabs.some((t) => t.id === tab) ? tab : "due";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5 lg:p-6">
@@ -156,7 +189,7 @@ export function DeskView({ name }: { name: string }) {
             onClick={() => setTab(k.tab)}
             className={cn(
               "rounded-xl border bg-surface px-4 py-3 text-left shadow-[var(--shadow-card)] transition-colors",
-              tab === k.tab ? "border-ink/30 ring-2 ring-ink/10" : "border-line hover:border-line-strong",
+              current === k.tab ? "border-ink/30 ring-2 ring-ink/10" : "border-line hover:border-line-strong",
             )}
           >
             <div className="flex items-center gap-1.5 text-xs font-medium text-muted">
@@ -174,28 +207,21 @@ export function DeskView({ name }: { name: string }) {
       </div>
 
       <Card className="flex min-h-[420px] flex-col overflow-hidden">
-        <div className="flex items-center gap-1 border-b border-line px-3 pt-1">
-          {kpis.map((k) => (
-            <button
-              key={k.tab}
-              type="button"
-              onClick={() => setTab(k.tab)}
-              className={cn(
-                "-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-[13px] font-medium",
-                tab === k.tab ? "border-brand text-ink" : "border-transparent text-muted hover:text-ink",
-              )}
-            >
-              {k.label}
-              <span className="num rounded-full bg-surface-2 px-1.5 text-[11px] text-muted">{fmtInt(k.value)}</span>
-            </button>
-          ))}
-          {tab !== "mentions" && tabIsbns[tab].length ? (
-            <Button size="sm" variant="primary" className="ml-auto" onClick={() => open(tabIsbns[tab][0]!, tabIsbns[tab], `My Desk · ${tabLabel[tab]}`)}>
-              <PlayCircle />
-              Work through these ({fmtInt(tabIsbns[tab].length)})
-            </Button>
-          ) : null}
-        </div>
+        <DeskTabs
+          tabs={orderedTabs}
+          active={current}
+          onSelect={setTab}
+          onReorder={saveOrder}
+          onReset={savedOrder.length ? () => saveOrder([]) : undefined}
+          trailing={
+            current !== "mentions" && tabIsbns[current]?.length ? (
+              <Button size="sm" variant="primary" onClick={() => open(tabIsbns[current]![0]!, tabIsbns[current]!, `My Desk · ${tabLabel[current]}`)}>
+                <PlayCircle />
+                <span className="hidden xl:inline">Work through these</span> ({fmtInt(tabIsbns[current]!.length)})
+              </Button>
+            ) : null
+          }
+        />
 
         <div className="min-h-0 flex-1">
           {loading ? (
@@ -204,25 +230,31 @@ export function DeskView({ name }: { name: string }) {
                 <Skeleton key={i} className="h-12" />
               ))}
             </div>
-          ) : tab === "due" ? (
+          ) : current.startsWith("g:") ? (
+            <List empty="No titles match this group's rules right now (or your division / imprint filter hides them).">
+              {(groupLists.get(current) ?? []).map((t) => (
+                <GroupRow key={t.isbn} title={t} onOpen={() => open(t.isbn, tabIsbns[current]!, `My Desk · ${tabLabel[current]}`)} />
+              ))}
+            </List>
+          ) : current === "due" ? (
             <List empty={`Nothing due in the next ${windowDays} days — every title with a near deadline has its estimates in.`}>
               {lists.due.map((d) => (
                 <DueRow key={d.isbn} item={d} title={byIsbn.get(d.isbn)} onOpen={() => open(d.isbn, tabIsbns.due, "My Desk · Due soon")} />
               ))}
             </List>
-          ) : tab === "gap" ? (
+          ) : current === "gap" ? (
             <List empty="No title is below its laydown goal.">
               {lists.gap.map((g) => (
                 <GapRow key={g.isbn} item={g} title={byIsbn.get(g.isbn)} onOpen={() => open(g.isbn, tabIsbns.gap, "My Desk · Below goal")} />
               ))}
             </List>
-          ) : tab === "comp" ? (
+          ) : current === "comp" ? (
             <List empty="Every upcoming title has a comparable title.">
               {lists.comp.map((c) => (
                 <CompRow key={c.isbn} item={c} title={byIsbn.get(c.isbn)} onOpen={() => open(c.isbn, tabIsbns.comp, "My Desk · No comparable")} />
               ))}
             </List>
-          ) : tab === "changed" ? (
+          ) : current === "changed" ? (
             desk.isPending ? (
               <div className="space-y-2 p-4">
                 {Array.from({ length: 4 }).map((_, i) => (
@@ -292,6 +324,33 @@ function DueRow({ item, title, onOpen }: { item: DueItem; title?: TitleSummaryRo
           {item.milestone} {when}
         </Badge>
         <div className="num mt-0.5 text-[11px] text-subtle">{fmtDate(item.date)}</div>
+      </div>
+    </RowShell>
+  );
+}
+
+/** A title in a work group: what it still needs, and when it publishes. */
+function GroupRow({ title, onOpen }: { title: TitleSummaryRow; onOpen: () => void }) {
+  const missing = missingTotals(title.totals);
+  const gap = title.totals.estimateVsGoal;
+  return (
+    <RowShell onOpen={onOpen}>
+      <TitleCell title={title} isbn={title.isbn} />
+      <div className="hidden text-xs text-muted lg:block">{[title.format, title.imprint].filter(Boolean).join(" · ")}</div>
+      <div className="hidden w-60 shrink-0 text-right text-xs md:block">
+        {missing.length ? (
+          <span className="text-muted">
+            Missing: <span className="font-medium text-ink-2">{missing.map((m) => m.replace("Laydown ", "").toLowerCase()).join(", ")}</span>
+          </span>
+        ) : gap !== null && gap > 0 ? (
+          <span className="num font-medium text-warn">{fmtInt(gap)} below goal</span>
+        ) : (
+          <span className="font-medium text-ok">Estimates in</span>
+        )}
+      </div>
+      <div className="w-28 shrink-0 text-right">
+        <div className="num text-[13px] text-ink-2">{fmtDate(title.pubDate)}</div>
+        <div className="text-[11px] text-subtle">Pub date</div>
       </div>
     </RowShell>
   );

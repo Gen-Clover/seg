@@ -2,7 +2,7 @@
 
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
-import type { AccountRef } from "@seg/domain";
+import type { AccountRef, GroupDefinition } from "@seg/domain";
 import type { Session } from "@/server/auth/session";
 import type { CommentView, NotificationView } from "@/server/services/comments";
 import type { ChangedTitle } from "@/server/services/desk";
@@ -139,10 +139,13 @@ export function useNotifications(enabled: boolean) {
   });
 }
 
+/** A work group assigned to the signed-in person (a My Desk tab). */
+export type DeskGroup = GroupDefinition & { id: string; name: string };
+
 export function useDesk() {
   return useQuery({
     queryKey: queryKeys.desk,
-    queryFn: () => api<{ changed: ChangedTitle[] }>("/api/desk"),
+    queryFn: () => api<{ changed: ChangedTitle[]; groups: DeskGroup[]; tabOrder: string[] }>("/api/desk"),
     staleTime: 30_000,
   });
 }

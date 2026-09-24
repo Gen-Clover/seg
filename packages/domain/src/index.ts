@@ -10,3 +10,4 @@ export * from "./report";
 export * from "./trends";
 export * from "./desk";
 export * from "./assistant";
+export * from "./workgroups";

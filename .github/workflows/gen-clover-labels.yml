@@ -1,0 +1,24 @@
+# Creates or updates the Gen Clover labels (managed by gen-clover/playbook). Runs when the label list changes, or by hand.
+name: Gen Clover labels
+on:
+  push:
+    branches: [main, dev]
+    paths: [".github/gen-clover-labels.json", ".github/workflows/gen-clover-labels.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  labels:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create or update labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          jq -c '.[]' .github/gen-clover-labels.json | while read -r label; do
+            name=$(jq -r .name <<<"$label"); color=$(jq -r .color <<<"$label"); desc=$(jq -r .description <<<"$label")
+            gh label create "$name" --color "$color" --description "$desc" --force --repo "$GITHUB_REPOSITORY"
+            echo "ok: $name"
+          done

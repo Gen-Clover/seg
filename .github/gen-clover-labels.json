@@ -1,0 +1,11 @@
+[
+  { "name": "type:requirement", "color": "1D76DB", "description": "Gen Clover: new work not yet approved or delivered (REQ)" },
+  { "name": "type:change-request", "color": "5319E7", "description": "Gen Clover: changes something already approved or delivered (CR)" },
+  { "name": "type:defect", "color": "D93F0B", "description": "Gen Clover: fails agreed acceptance criteria (BUG)" },
+  { "name": "type:task", "color": "C5DEF5", "description": "Gen Clover: discovery, QA round, UAT, release, PM or support time (TASK)" },
+  { "name": "status:approved", "color": "0E8A16", "description": "Gen Clover: client approval recorded; build may start" },
+  { "name": "priority:P1", "color": "B60205", "description": "Gen Clover: blocks use or data is wrong" },
+  { "name": "priority:P2", "color": "FBCA04", "description": "Gen Clover: important, has a workaround" },
+  { "name": "priority:P3", "color": "EDEDED", "description": "Gen Clover: minor" },
+  { "name": "no-changelog", "color": "EDEDED", "description": "Gen Clover: PR intentionally without a CHANGELOG line (say why)" }
+]

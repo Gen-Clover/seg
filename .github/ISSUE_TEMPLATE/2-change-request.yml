@@ -1,0 +1,31 @@
+name: Change request
+description: Changes something the client already approved or received (Gen Clover CR)
+title: "[CR] "
+labels: ["type:change-request"]
+body:
+  - type: markdown
+    attributes:
+      value: "Work ID = `<project key>-CR-<this issue number>`. Nothing is built until this is **Approved**."
+  - type: textarea
+    id: goal
+    attributes: { label: What changes and why, description: "What was approved or delivered, what changes, and why" }
+    validations: { required: true }
+  - type: textarea
+    id: criteria
+    attributes: { label: Acceptance criteria, description: "Checklist; each becomes a test case", value: "- [ ] " }
+    validations: { required: true }
+  - type: input
+    id: estimate
+    attributes: { label: Estimate (hours), placeholder: "e.g. 6 (4–8)" }
+    validations: { required: true }
+  - type: dropdown
+    id: priority
+    attributes: { label: Priority, options: [P1, P2, P3] }
+    validations: { required: true }
+  - type: textarea
+    id: approval
+    attributes: { label: Approval, description: "Filled by the PM: approved by, date, how (email/call/signature)" }
+  - type: textarea
+    id: impact
+    attributes: { label: Impact, description: "Effect on estimate, dates, other items" }
+    validations: { required: true }

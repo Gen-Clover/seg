@@ -16,7 +16,7 @@ delivery_folder: SEG
 board: GitHub project "ABR-SEG"
 environments:
   dev: https://seg-web-git-dev-genclovers-projects.vercel.app
-  uat: to be created (branch uat, own Vercel environment and database)
+  uat: https://seg-web-git-uat-genclovers-projects.vercel.app (branch uat, database seg_uat)
   prod: https://seg-web-kappa.vercel.app
 versions:
   baseline: v1.0.0

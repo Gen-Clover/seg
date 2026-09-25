@@ -1,0 +1,15 @@
+name: Task
+description: Non-development work to log time against — discovery, QA round, UAT, release, PM or support per month (Gen Clover TASK)
+title: "[TASK] "
+labels: ["type:task"]
+body:
+  - type: markdown
+    attributes:
+      value: "Work ID = `<project key>-TASK-<this issue number>`. Examples: `Discovery: chat improvements`, `QA: v1.1.0`, `UAT: v1.1.0`, `Release: v1.1.0`, `PM: October 2026`."
+  - type: textarea
+    id: scope
+    attributes: { label: What this covers }
+    validations: { required: true }
+  - type: input
+    id: estimate
+    attributes: { label: Estimate (hours) }

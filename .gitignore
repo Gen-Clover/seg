@@ -26,3 +26,17 @@ packages/seed/output/
 .turbo/
 .DS_Store
 *.log
+
+# --- Gen Clover: never commit (managed by gen-clover/playbook) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*service-account*.json
+*.dump
+*.bak
+exports/
+dumps/
+old/
+# --- end Gen Clover ---

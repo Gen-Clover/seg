@@ -1,0 +1,29 @@
+key: ABR-SEG
+project_id: GC-ABR-SEG
+status: active
+client:
+  code: ABR
+  name: Abrams
+project:
+  code: SEG
+  name: Seasonal Estimate Grid
+subprojects: CHAT (Ask Abrams chat and assistant)
+repos:
+  code: Gen-Clover/seg
+  qa: Gen-Clover/seg-qa
+  delivery: Gen-Clover/abr-delivery
+delivery_folder: SEG
+board: GitHub project "ABR-SEG"
+environments:
+  dev: https://seg-web-git-dev-genclovers-projects.vercel.app
+  uat: to be created (branch uat, own Vercel environment and database)
+  prod: https://seg-web-kappa.vercel.app
+versions:
+  baseline: v1.0.0
+  next: v1.1.0
+billing:
+  basis: hourly, monthly client pack
+  defects: per contract
+code_owner: genclover
+claude_project: ABR-SEG
+time_sheet: Gen Clover time sheet (Google Sheet)

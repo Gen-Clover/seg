@@ -1,0 +1,31 @@
+name: Defect
+description: Something doesn't meet agreed acceptance criteria (Gen Clover BUG)
+title: "[BUG] "
+labels: ["type:defect"]
+body:
+  - type: markdown
+    attributes:
+      value: "Work ID = `<project key>-BUG-<this issue number>`."
+  - type: textarea
+    id: steps
+    attributes: { label: Steps to reproduce, value: "1. " }
+    validations: { required: true }
+  - type: textarea
+    id: expected
+    attributes: { label: Expected }
+    validations: { required: true }
+  - type: textarea
+    id: actual
+    attributes: { label: Actual, description: Include screenshots or video }
+    validations: { required: true }
+  - type: input
+    id: testcase
+    attributes: { label: Test case ID, placeholder: "TC-CHAT-012 (or 'none')" }
+  - type: input
+    id: build
+    attributes: { label: Found in (build and environment), placeholder: "v1.1.0-uat.1 on UAT" }
+    validations: { required: true }
+  - type: dropdown
+    id: severity
+    attributes: { label: Severity, options: ["P1 – blocks use or data is wrong", "P2 – important, has a workaround", "P3 – minor"] }
+    validations: { required: true }

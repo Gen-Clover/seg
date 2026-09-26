@@ -104,9 +104,11 @@ no third-party APIs are used.
 |---|---|---|---|
 | `main` | Production (client demo) | `seg` | yes (`WRITEBACK=bigquery`) |
 | `dev` | Preview (testing before release) | `seg_dev` | no (`WRITEBACK=none`) |
+| `uat` | Preview — UAT, client review ([link](https://seg-web-git-uat-genclovers-projects.vercel.app)) | `seg_uat` | no (`WRITEBACK=none`) |
 | `feature/*` | Preview | `seg_dev` | no |
 
-Work happens on `feature/*` branches, is merged into `dev` for testing, and reaches `main` once approved.
+Work happens on `feature/*` branches, is merged into `dev` for testing, promoted to `uat` for client
+review, and reaches `main` once approved.
 A new database is filled from BigQuery by calling `/api/jobs/ingest` with `Authorization: Bearer $CRON_SECRET`
 (the nightly cron does this for production only).
 

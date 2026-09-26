@@ -29,7 +29,7 @@ import {
   type UserDoc,
 } from "@seg/data";
 import { hashPassword } from "@seg/data/password";
-import { clean, estimateId, normalizeAccount, refForLevel, type Level } from "@seg/domain";
+import { clean, estimateId, normalizeAccount, refForLevel, roomPreview, type Level } from "@seg/domain";
 import { bigquery, bigQueryConfig } from "../bigquery";
 import { collections, db } from "../db";
 import { refreshTrends } from "./trends";
@@ -312,10 +312,14 @@ async function restoreChat(): Promise<number> {
     deletedAt: ts(r.deleted_at),
     syncedAt,
   }));
-  const last = new Map<string, ChatMessageDoc>();
-  for (const m of messages) if (!m.deletedAt && (!last.get(m.roomId) || last.get(m.roomId)!.createdAt < m.createdAt)) last.set(m.roomId, m);
+  const byRoom = new Map<string, ChatMessageDoc[]>();
+  for (const m of messages) {
+    const list = byRoom.get(m.roomId);
+    if (list) list.push(m);
+    else byRoom.set(m.roomId, [m]);
+  }
   const rooms: ChatRoomDoc[] = roomRows.map((r) => {
-    const m = last.get(String(r.room_id));
+    const preview = roomPreview(byRoom.get(String(r.room_id)) ?? []);
     const createdAt = ts(r.created_at) ?? syncedAt;
     return {
       _id: String(r.room_id),
@@ -325,8 +329,7 @@ async function restoreChat(): Promise<number> {
       createdBy: String(r.created_by ?? ""),
       createdAt,
       updatedAt: ts(r.version_at) ?? createdAt,
-      lastMessageAt: m?.createdAt ?? null,
-      lastMessage: m ? { authorName: m.authorName, excerpt: m.body.slice(0, 140) } : null,
+      ...preview,
       syncedAt,
     };
   });

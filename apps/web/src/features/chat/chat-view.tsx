@@ -356,6 +356,7 @@ export function Room({
       const now = new Date().toISOString();
       setMessages((prev) => (prev ?? []).map((m) => (m._id === editing.id ? { ...m, body: editing.text.trim(), editedAt: now } : m)));
       setEditing(null);
+      void qc.invalidateQueries({ queryKey: chatKeys.rooms });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't save the change.");
     }
@@ -369,6 +370,7 @@ export function Room({
       await api(`/api/chat/messages/${id}`, { method: "DELETE" });
       const now = new Date().toISOString();
       setMessages((prev) => (prev ?? []).map((m) => (m._id === id ? { ...m, deletedAt: now } : m)));
+      void qc.invalidateQueries({ queryKey: chatKeys.rooms });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't delete the message.");
     }

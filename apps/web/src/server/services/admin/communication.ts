@@ -3,7 +3,8 @@ import type { ChatMessageDoc } from "@seg/data";
 import type { Session } from "../../auth/session";
 import { collections } from "../../db";
 import { HttpError } from "../../http";
-import { EVERYONE } from "../chat";
+import { messageExcerpt } from "@seg/domain";
+import { EVERYONE, refreshRoomPreview } from "../chat";
 import { audit, getSettings, updateSettings, type Announcement } from "../settings";
 import { scheduleWriteback } from "../writeback";
 
@@ -35,7 +36,10 @@ export async function moderateMessage(id: string, admin: Session, reason: string
   const msg = await messages.findOne({ _id: id });
   if (!msg) throw new HttpError(404, "That message no longer exists.");
   const now = new Date().toISOString();
-  if (!msg.deletedAt) await messages.updateOne({ _id: id }, { $set: { deletedAt: now, syncedAt: null } });
+  if (!msg.deletedAt) {
+    await messages.updateOne({ _id: id }, { $set: { deletedAt: now, syncedAt: null } });
+    await refreshRoomPreview(msg.roomId);
+  }
   await (await collections.chatReports()).updateMany({ messageId: id, status: "open" }, { $set: { status: "removed", resolvedBy: admin.email, resolvedAt: now } });
   await (await collections.notifications()).deleteMany({ commentId: id });
   await audit(admin, "chat", "remove message", `Removed a message by ${msg.authorName}: "${msg.body.slice(0, 80)}"${reason ? ` — ${reason}` : ""}`);
@@ -113,7 +117,7 @@ export async function postAsAdmin(text: string, admin: Session) {
   await (await collections.chatMessages()).insertOne(message);
   await (await collections.chatRooms()).updateOne(
     { _id: EVERYONE },
-    { $set: { lastMessageAt: now, lastMessage: { authorName: "SEG Admin", excerpt: text.slice(0, 140) }, updatedAt: now } },
+    { $set: { lastMessageAt: now, lastMessage: { authorName: "SEG Admin", excerpt: messageExcerpt(text) }, updatedAt: now } },
   );
   await audit(admin, "announcements", "post to Everyone", `Posted to Everyone: "${text.slice(0, 80)}"`);
   scheduleWriteback();

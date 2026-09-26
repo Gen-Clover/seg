@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { ChatMessageDoc, ChatRoomDoc, NotificationDoc } from "@seg/data";
+import { messageExcerpt, roomPreview } from "@seg/domain";
 import type { Session } from "../auth/session";
 import { collections } from "../db";
 import { HttpError } from "../http";
@@ -174,7 +175,7 @@ export async function postMessage(roomId: string, session: Session, input: z.inf
     syncedAt: null,
   };
   await (await collections.chatMessages()).insertOne(message);
-  const excerpt = input.body.length > 140 ? `${input.body.slice(0, 140)}…` : input.body;
+  const excerpt = messageExcerpt(input.body);
   await (await collections.chatRooms()).updateOne(
     { _id: roomId },
     { $set: { lastMessageAt: now, lastMessage: { authorName: session.name, excerpt }, updatedAt: now } },
@@ -222,6 +223,7 @@ export async function editMessage(id: string, session: Session, body: string): P
     { _id: id },
     { $set: { body: trimmed.slice(0, 4000), titleRefs: await titleRefs(trimmed), editedAt: new Date().toISOString(), syncedAt: null } },
   );
+  await refreshRoomPreview(msg.roomId);
   scheduleWriteback();
 }
 
@@ -232,7 +234,22 @@ export async function deleteMessage(id: string, session: Session): Promise<void>
   if (msg.authorEmail !== session.email && session.role !== "admin") throw new HttpError(403, "Only the author or an admin can delete a message.");
   await messages.updateOne({ _id: id }, { $set: { deletedAt: new Date().toISOString(), syncedAt: null } });
   await (await collections.notifications()).deleteMany({ commentId: id });
+  await refreshRoomPreview(msg.roomId);
   scheduleWriteback();
+}
+
+/**
+ * Re-derives a room's conversation-list preview after a message is edited, deleted or removed in
+ * moderation (only postMessage() and postAsAdmin() set it otherwise). `syncedAt` is left alone: the
+ * preview isn't part of the BigQuery room outbox, and ingest rebuilds it by the same rule.
+ */
+export async function refreshRoomPreview(roomId: string): Promise<void> {
+  const latest = await (await collections.chatMessages())
+    .find({ roomId, deletedAt: null }, { projection: { authorName: 1, body: 1, createdAt: 1, deletedAt: 1 } })
+    .sort({ createdAt: -1 })
+    .limit(1)
+    .toArray();
+  await (await collections.chatRooms()).updateOne({ _id: roomId }, { $set: roomPreview(latest) });
 }
 
 export async function markRead(roomId: string, session: Session, at = new Date().toISOString()): Promise<void> {

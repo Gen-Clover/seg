@@ -11,3 +11,4 @@ export * from "./trends";
 export * from "./desk";
 export * from "./assistant";
 export * from "./workgroups";
+export * from "./chat";

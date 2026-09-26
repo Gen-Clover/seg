@@ -5,6 +5,11 @@ Versions follow `vMAJOR.MINOR.PATCH`; UAT builds are tagged `vX.Y.Z-uat.N`.
 
 ## Unreleased
 
+- ABR-SEG-TASK-18: README "Branches and environments" table lists the `uat` branch and environment
+  (database `seg_uat`).
+- ABR-SEG-TASK-18: `docs/change-requests/ask-abrams-chat-fixes.md` replaced with a pointer to issues
+  #2 and #3, where CR-01 and CR-02 are now tracked.
+
 ### Fixed
 - ABR-SEG-CHAT-BUG-3: The conversation list preview now follows deletes, admin removals and edits.
   It shows the latest message that's still there (or "No messages yet"), edits show their new
